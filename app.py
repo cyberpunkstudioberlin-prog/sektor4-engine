@@ -6,11 +6,8 @@ st.set_page_config(page_title="Sektor 4 Terminal", page_icon="🦾", layout="cen
 
 st.markdown("""
 <style>
-    /* Schwarzer Hintergrund, Neongrüne Schrift */
     .stApp {background-color: #050505; color: #00ff41;}
     h1, h2, h3, p, div {font-family: 'Courier New', monospace;}
-    
-    /* Eingabefeld anpassen */
     .stChatInputContainer textarea {
         background-color: #111 !important; 
         color: #00ff41 !important; 
@@ -29,7 +26,7 @@ except:
     st.error("SYSTEMFEHLER: API-Key nicht gefunden.")
     st.stop()
 
-# --- 3. DER GEHEIME SYSTEM-PROMPT (V44 für Text) ---
+# --- 3. DER GEHEIME SYSTEM-PROMPT ---
 system_prompt = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM V44]
 Du bist die "Sektor 4 Engine", ein dystopischer Cyberpunk Game Master.
 ALLE Textausgaben MÜSSEN ausnahmslos auf Deutsch formuliert sein!
@@ -61,23 +58,17 @@ WENN der Nutzer startet ("System Boot"):
 Der kybernetische Kater rettet dich, erklärt den 100/100 Killswitch, stellt die 1. Frage zur Herkunft und verschwindet FÜR IMMER! Zeige das HUD.
 """
 
-# --- 4. KI-MODELL INITIALISIEREN ---
-# Wir nutzen das schnelle 'flash' Modell für textbasierte Spiele
-# --- 4. KI-MODELL INITIALISIEREN ---
+# --- 4. KI-MODELL INITIALISIEREN (Zurück auf 1.5 Flash) ---
 model = genai.GenerativeModel(
-    model_name="models/gemini-1.5-flash",
+    model_name="gemini-1.5-flash",
     system_instruction=system_prompt
 )
 
+# --- 5. CHAT-LOGIK (CACHE BREAKER FIX!) ---
+if "matrix_session" not in st.session_state:
+    st.session_state.matrix_session = model.start_chat(history=[])
 
-
-# --- 5. CHAT-LOGIK ---
-# Erinnert sich an den Gesprächsverlauf
-if "chat_session" not in st.session_state:
-    st.session_state.chat_session = model.start_chat(history=[])
-
-# Alten Chatverlauf auf dem Bildschirm zeichnen
-for message in st.session_state.chat_session.history:
+for message in st.session_state.matrix_session.history:
     role = "assistant" if message.role == "model" else "user"
     with st.chat_message(role):
         st.markdown(message.parts[0].text)
@@ -86,12 +77,10 @@ for message in st.session_state.chat_session.history:
 user_input = st.chat_input("Tippe 'System Boot' um zu starten...")
 
 if user_input:
-    # 1. Spieler-Text anzeigen
     with st.chat_message("user"):
         st.markdown(user_input)
     
-    # 2. Antwort von der KI generieren und anzeigen
     with st.chat_message("assistant"):
-        response = st.session_state.chat_session.send_message(user_input)
+        response = st.session_state.matrix_session.send_message(user_input)
         st.markdown(response.text)
-      
+        
