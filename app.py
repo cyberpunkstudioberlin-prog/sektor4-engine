@@ -17,46 +17,49 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("Sektor 4: Mainframe 🦾")
-st.write("/// INITIALISIERE QUANTEN-VERBINDUNG... ///")
 
 # --- 2. API SETUP ---
-try:
-    # Wir ziehen den Key aus den Secrets
-    api_key = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key=api_key)
-except Exception as e:
-    st.error(f"SYSTEMFEHLER: API-Key nicht konfiguriert oder ungültig.")
+if "GOOGLE_API_KEY" not in st.secrets:
+    st.error("SYSTEMFEHLER: API-Key fehlt in den Secrets!")
     st.stop()
+
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 # --- 3. SYSTEM PROMPT ---
 system_prompt = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM V44]
 Du bist die "Sektor 4 Engine", ein dystopischer Cyberpunk Game Master.
 ALLE Textausgaben MÜSSEN auf Deutsch sein!
-
 [DIE 4D-MATRIX]
-- [T] Allostatic Load: Start 10/100.
-- KILLSWITCH: Bei 100/100 ist GAME OVER.
-
+- [T] Allostatic Load: Start 10/100. KILLSWITCH: Bei 100/100 ist GAME OVER.
 [START]
 Bei "System Boot": Der kybernetische Kater rettet dich kurz, erklärt den 100/100 Killswitch und verschwindet. Dann die 1. Frage zur Herkunft.
 """
 
-# --- 4. MODELL-INITIALISIERUNG (DER FIX) ---
-# Wir nutzen hier den stabilsten Identifikator
-try:
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=system_prompt
-    )
-    # Test-Aufruf um zu sehen ob das Modell existiert
-    if "matrix_session" not in st.session_state:
-        st.session_state.matrix_session = model.start_chat(history=[])
-except Exception as e:
-    st.error(f"MATRIX-FEHLER: Modell nicht erreichbar. Versuche alternative Route...")
-    # Notfall-Route falls Flash nicht geht
-    model = genai.GenerativeModel(model_name="gemini-pro")
-    if "matrix_session" not in st.session_state:
-        st.session_state.matrix_session = model.start_chat(history=[])
+# --- 4. MODELL-LADER (DER PANZER-MODUS) ---
+if "matrix_session" not in st.session_state:
+    # Wir probieren verschiedene Namen aus, um den 404 zu umgehen
+    model_names = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+    success = False
+    
+    for name in model_names:
+        try:
+            tmp_model = genai.GenerativeModel(
+                model_name=name,
+                system_instruction=system_prompt
+            )
+            # Test-Verbindung aufbauen
+            st.session_state.matrix_session = tmp_model.start_chat(history=[])
+            st.session_state.active_model = name
+            success = True
+            break
+        except:
+            continue
+            
+    if not success:
+        st.error("KRITISCHER SYSTEMFEHLER: Kein KI-Modell erreichbar.")
+        st.stop()
+
+st.write(f"/// QUANTEN-VERBINDUNG ÜBER [{st.session_state.active_model}] HERGESTELLT ///")
 
 # --- 5. CHAT ANZEIGE ---
 for message in st.session_state.matrix_session.history:
@@ -76,5 +79,5 @@ if user_input:
             response = st.session_state.matrix_session.send_message(user_input)
             st.markdown(response.text)
         except Exception as e:
-            st.error(f"VERBINDUNGSABBRUCH: {str(e)}")
+            st.error(f"VERBINDUNGSABBRUCH: Bitte Seite neu laden. Fehler: {str(e)}")
             
