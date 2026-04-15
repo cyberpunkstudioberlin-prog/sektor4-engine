@@ -1,7 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 
-# --- 1. DESIGN & CYBERPUNK FEELING ---
+# --- 1. DESIGN ---
 st.set_page_config(page_title="Sektor 4 Terminal", page_icon="🦾", layout="centered")
 
 st.markdown("""
@@ -17,70 +17,64 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("Sektor 4: Mainframe 🦾")
-st.write("/// VERBINDUNG ZUR 4D-MATRIX HERGESTELLT ///")
+st.write("/// INITIALISIERE QUANTEN-VERBINDUNG... ///")
 
-# --- 2. GOOGLE GEMINI API VERBINDUNG ---
+# --- 2. API SETUP ---
 try:
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-except:
-    st.error("SYSTEMFEHLER: API-Key nicht gefunden.")
+    # Wir ziehen den Key aus den Secrets
+    api_key = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key=api_key)
+except Exception as e:
+    st.error(f"SYSTEMFEHLER: API-Key nicht konfiguriert oder ungültig.")
     st.stop()
 
-# --- 3. DER GEHEIME SYSTEM-PROMPT ---
+# --- 3. SYSTEM PROMPT ---
 system_prompt = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM V44]
 Du bist die "Sektor 4 Engine", ein dystopischer Cyberpunk Game Master.
-ALLE Textausgaben MÜSSEN ausnahmslos auf Deutsch formuliert sein!
+ALLE Textausgaben MÜSSEN auf Deutsch sein!
 
-[DIE 4D-MATRIX (STRIKT TEXT)]
-- [Y] Kapital: Nutze NUR Worte (Prekär, Gasse, Mittelstand, Elite).
-- [X] Habitus: Nutze NUR Worte (Tradition, Anpassung, Disruption).
+[DIE 4D-MATRIX]
 - [T] Allostatic Load: Start 10/100.
-- KILLSWITCH-REGEL: Erreicht der T-Load 100/100, gib NUR NOCH "GAME OVER" aus! Keine Optionen mehr!
+- KILLSWITCH: Bei 100/100 ist GAME OVER.
 
-[LORE-LOCK]
-- Feind: IMMER das "Necromancer Krokodil" (und mechanische Zombie-Teddys).
-- Kater-Verbot: Der Kater existiert NUR in Runde 0. Ab Runde 1 ist der Spieler VÖLLIG ALLEIN.
-
-[TEXT-LÄNGE & STRUKTUR]
-Story-Text: Maximal 3 kurze Sätze (kalter Maschinen-Stil).
-📷 Kamera-Feed: [1 kurzer Satz zur Szene.]
-[Story-Text: Maximal 3 Sätze. Beschreibe die Situation.]
-Wähle A, B oder C:
-- A) [Extrem kurz]
-- B) [Extrem kurz]
-- C) [Extrem kurz]
-=== HUD ===
-Runde: [X]/10 | Y: [Wort] | X: [Wort] 
-T-Load: [Wert]/100 [ASCII-Ladebalken: █████░░░░░]
-
-[BOOT SEQUENZ]
-WENN der Nutzer startet ("System Boot"):
-Der kybernetische Kater rettet dich, erklärt den 100/100 Killswitch, stellt die 1. Frage zur Herkunft und verschwindet FÜR IMMER! Zeige das HUD.
+[START]
+Bei "System Boot": Der kybernetische Kater rettet dich kurz, erklärt den 100/100 Killswitch und verschwindet. Dann die 1. Frage zur Herkunft.
 """
 
-# --- 4. KI-MODELL INITIALISIEREN (Zurück auf 1.5 Flash) ---
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    system_instruction=system_prompt
-)
+# --- 4. MODELL-INITIALISIERUNG (DER FIX) ---
+# Wir nutzen hier den stabilsten Identifikator
+try:
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=system_prompt
+    )
+    # Test-Aufruf um zu sehen ob das Modell existiert
+    if "matrix_session" not in st.session_state:
+        st.session_state.matrix_session = model.start_chat(history=[])
+except Exception as e:
+    st.error(f"MATRIX-FEHLER: Modell nicht erreichbar. Versuche alternative Route...")
+    # Notfall-Route falls Flash nicht geht
+    model = genai.GenerativeModel(model_name="gemini-pro")
+    if "matrix_session" not in st.session_state:
+        st.session_state.matrix_session = model.start_chat(history=[])
 
-# --- 5. CHAT-LOGIK (CACHE BREAKER FIX!) ---
-if "matrix_session" not in st.session_state:
-    st.session_state.matrix_session = model.start_chat(history=[])
-
+# --- 5. CHAT ANZEIGE ---
 for message in st.session_state.matrix_session.history:
     role = "assistant" if message.role == "model" else "user"
     with st.chat_message(role):
         st.markdown(message.parts[0].text)
 
-# --- 6. NEUE EINGABE VOM SPIELER ---
-user_input = st.chat_input("Tippe 'System Boot' um zu starten...")
+# --- 6. EINGABE ---
+user_input = st.chat_input("Tippe 'System Boot'...")
 
 if user_input:
     with st.chat_message("user"):
         st.markdown(user_input)
     
     with st.chat_message("assistant"):
-        response = st.session_state.matrix_session.send_message(user_input)
-        st.markdown(response.text)
-        
+        try:
+            response = st.session_state.matrix_session.send_message(user_input)
+            st.markdown(response.text)
+        except Exception as e:
+            st.error(f"VERBINDUNGSABBRUCH: {str(e)}")
+            
