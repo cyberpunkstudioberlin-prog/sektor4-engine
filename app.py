@@ -63,10 +63,12 @@ Der kybernetische Kater rettet dich, erklärt den 100/100 Killswitch, stellt die
 
 # --- 4. KI-MODELL INITIALISIEREN ---
 # Wir nutzen das schnelle 'flash' Modell für textbasierte Spiele
+# --- 4. KI-MODELL INITIALISIEREN ---
 model = genai.GenerativeModel(
-    model_name="gemini-pro",
+    model_name="models/gemini-1.5-flash",
     system_instruction=system_prompt
 )
+
 
 
 # --- 5. CHAT-LOGIK ---
