@@ -27,7 +27,7 @@ if "chat_log" not in st.session_state:
 
 # --- CORE ENGINE ---
 def run_core(cmd):
-    directive = ""[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
+    directive = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
 Du bist die "Sektor 4 Engine", ein unerbittlicher Cyberpunk/Steampunk Game Master.
 
 [FORMATIERUNGS-PROTOKOLL: ZWINGEND]
