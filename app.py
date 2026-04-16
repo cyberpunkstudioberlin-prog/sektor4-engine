@@ -2,13 +2,12 @@ import streamlit as st
 import google.generativeai as genai
 import time
 import re
-import requests
-import io
-from openai import OpenAI
+import urllib.parse
+import random
 
 # Author: Murat Zengin
 # Project: Questbook Killswitch
-# Module: V75 OpenAI DALL-E 3 Hybrid Core
+# Module: V77 Zero-Budget Core (Pollinations.ai Integration)
 
 # --- UI INITIALISIERUNG ---
 st.set_page_config(
@@ -38,58 +37,40 @@ st.markdown("""
 st.title("Questbook Killswitch 🦾")
 
 # --- API KONFIGURATION ---
-if "GOOGLE_API_KEY" not in st.secrets or "OPENAI_API_KEY" not in st.secrets:
-    st.error("SYSTEM ERROR: API-Keys (Google/OpenAI) fehlen in den Secrets.")
+if "GOOGLE_API_KEY" not in st.secrets:
+    st.error("SYSTEM ERROR: Google API-Key fehlt in den Secrets.")
     st.stop()
 
-# Initialisiere Clients
-openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-API_KEY_GOOGLE = st.secrets["GOOGLE_API_KEY"]
-TEXT_MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+TEXT_MODEL_NAME = "gemini-1.5-flash" # Flash ist in der Free-Tier am stabilsten
 
-# --- BILDGENERATOR (DALL-E 3) ---
-def generate_dalle_visual(prompt):
-    """Generiert ein 9:16 Bild (1024x1792) via DALL-E 3."""
-    safety_prompt = (
-        f"Cyberpunk steampunk style, dark rainy atmosphere, cinematic lighting. "
-        f"STRICTLY NO HUMANS. Focus on mechanical parts, drones, or a steampunk cat: {prompt}"
-    )
-    try:
-        with st.spinner("DALL-E 3 berechnet Visual-Asset..."):
-            response = openai_client.images.generate(
-                model="dall-e-3",
-                prompt=safety_prompt,
-                size="1024x1792", # Natives Hochformat
-                quality="hd",
-                n=1
-            )
-            image_url = response.data[0].url
-            st.session_state.current_image = image_url
-            return image_url
-    except Exception as e:
-        st.sidebar.error(f"DALL-E Inferenz fehlgeschlagen: {str(e)}")
-        return None
-
-# --- TEXTGENERATOR (GEMINI MIT BACKOFF) ---
-def call_gemini_text(prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{TEXT_MODEL_NAME}:generateContent?key={API_KEY_GOOGLE}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
+# --- BILDGENERATOR (POLLINATIONS.AI - GRATIS) ---
+def generate_free_visual(prompt):
+    """Generiert ein Bild-URL via Pollinations.ai (No Budget Alternative)."""
+    # Styling-Zusatz für Sektor 4
+    style_suffix = "cinematic steampunk cyberpunk, dark rainy atmosphere, neon green accents, ultra-detailed, 9:16 vertical, no humans"
+    full_prompt = f"{prompt}, {style_suffix}"
     
-    delays = [1, 2, 4, 8, 16]
-    for i, delay in enumerate(delays):
-        try:
-            response = requests.post(url, json=payload)
-            if response.status_code == 429:
-                time.sleep(delay)
-                continue
-            response.raise_for_status()
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        except Exception as e:
-            if i == len(delays) - 1: raise e
-            time.sleep(delay)
-    return "Fehler in der Matrix-Verbindung."
+    # URL-Encoding für den Prompt
+    encoded_prompt = urllib.parse.quote(full_prompt)
+    seed = random.randint(0, 999999)
+    
+    # Pollinations URL Struktur (Breite: 540, Höhe: 960 für 9:16 Mobile)
+    image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=540&height=960&seed={seed}&nologo=true"
+    
+    st.session_state.current_image = image_url
+    return image_url
+
+# --- TEXTGENERATOR (GEMINI) ---
+def call_gemini_text(prompt):
+    model = genai.GenerativeModel(TEXT_MODEL_NAME)
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        if "429" in str(e):
+            return "⚠️ Quota-Limit erreicht. Bitte 60 Sekunden warten."
+        return f"Fehler: {str(e)}"
 
 # --- SESSION STATE ---
 if "chat_log" not in st.session_state:
@@ -102,26 +83,23 @@ if "chat_log" not in st.session_state:
 # --- ENGINE LOGIK ---
 def run_engine(user_input):
     directive = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
-Du bist die "Sektor 4 Engine". Nutze die 4D-Matrix: [Y] Kapital, [X] Habitus, [T] Stress.
-Stress (T) startet bei 10. Killswitch bei 100 = GAME OVER.
-REGELN: 
-1. Starte IMMER mit '📷 Kamera-Feed: [1 atmosphärischer Satz]'. 
-2. KEINE Menschen. 
+Du bist die "Sektor 4 Engine". GM für ein Cyberpunk-RPG.
+4D-MATRIX: [Y] Kapital, [X] Habitus, [T] Stress.
+REGELN:
+1. Starte mit '📷 Kamera-Feed: [1 kurzer englischer Satz für die Bild-KI]'.
+2. KEINE Menschen. Nur Maschinen/Tiere.
 3. Kapitel 1: Flucht vor dem Necromancer Krokodil.
 """
-    
     try:
-        with st.spinner("Inferenz läuft..."):
-            # Text generieren
+        with st.spinner("Matrix-Inferenz läuft..."):
             prompt = f"{directive}\nUser: {user_input}\nMatrix: {st.session_state.matrix}\nHistorie: {st.session_state.chat_log[-2:]}"
             output_text = call_gemini_text(prompt)
             
-            # Bild-Prompt extrahieren & generieren
             feed_match = re.search(r"📷 Kamera-Feed: (.*)", output_text)
             if feed_match:
-                generate_dalle_visual(feed_match.group(1))
+                generate_free_visual(feed_match.group(1))
             elif user_input.upper() == "SYSTEM BOOT":
-                generate_dalle_visual("A steampunk cat on a neon-lit rooftop in the rain.")
+                generate_free_visual("A steampunk cat with glowing eyes in a rainy alley")
 
             st.session_state.display_text = output_text
             st.session_state.chat_log.append({"role": "user", "content": user_input})
@@ -132,10 +110,10 @@ REGELN:
 
 # --- UI LAYOUT ---
 
-# 1. BILD (DALL-E URL)
+# 1. BILD (Pollinations URL)
 if st.session_state.current_image:
     st.image(st.session_state.current_image, use_container_width=True)
-    st.markdown('<div class="synthid-badge">OPENAI DALL-E 3 // SYNTHID VERIFIED</div>', unsafe_allow_html=True)
+    st.markdown('<div class="synthid-badge">POLLINATIONS.AI // ZERO-BUDGET INFRASTRUCTURE</div>', unsafe_allow_html=True)
 else:
     st.markdown("""<div style="width:100%; height:400px; background:#111; border:1px solid #333; 
         display:flex; align-items:center; justify-content:center; color:#333;">[KAMERA-FEED OFFLINE]</div>""", unsafe_allow_html=True)
@@ -161,7 +139,7 @@ if cmd:
 with st.sidebar:
     st.header("⚙️ System-HUD")
     st.write(f"Inferenz: {TEXT_MODEL_NAME}")
-    st.write(f"Visuals: DALL-E 3 (HD)")
+    st.write("Visuals: Pollinations (Free)")
     st.write(f"Runde: {st.session_state.round}/10")
     st.progress(st.session_state.matrix["T"] / 100, text=f"ALI (Stress): {st.session_state.matrix['T']}%")
     if st.button("Matrix Reset"):
