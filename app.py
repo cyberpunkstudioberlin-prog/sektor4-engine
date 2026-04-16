@@ -1,62 +1,65 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Author: Murat Zengin | Version: V52
-# No Image, Pure Logic, High Stability
+# Author: Murat Zengin | Version: V53 (Pure Text - Deep Link)
 
-# --- TERMINAL STYLING ---
-st.set_page_config(page_title="Sektor 4 V52", page_icon="📟")
+# --- STYLING ---
+st.set_page_config(page_title="Sektor 4 V53", page_icon="📟")
 st.markdown("<style>.stApp {background-color: #050505; color: #00ff41;} .stButton>button {background-color: #111; color: #00ff41; border: 1px solid #00ff41; font-family: 'monospace';}</style>", unsafe_allow_html=True)
 
-st.title("Sektor 4: Text-Core V52 📟")
+st.title("Sektor 4: Text-Core V53 📟")
 
-# --- ENGINE CONFIG ---
+# --- API SETUP ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-if "rpg_chat" not in st.session_state:
-    # Die Direktive wird jetzt bei jedem Call mitgegeben, um Session-Loss zu vermeiden
-    st.session_state.directive = (
-        "Du bist die Sektor 4 Engine. Hartes Cyberpunk-RPG in Berlin. "
-        "Antworte kurz, düster und atmosphärisch. Nutze NIEMALS KI-Floskeln. "
-        "Starte bei 'System Boot' sofort die Story im Untergrund von Berlin. "
-        "Gib am Ende immer genau 3 Optionen: A, B oder C."
-    )
-    st.session_state.log = "SYSTEM BEREIT. Warte auf Initialisierung..."
-    # Wir nutzen generate_content statt start_chat für maximale Stabilität
+if "log" not in st.session_state:
+    st.session_state.log = "SYSTEM BEREIT. Warte auf 'System Boot'..."
     st.session_state.history = []
 
-# --- COMMAND PROCESSING ---
+# --- CORE ENGINE ---
 def run_logic(user_input):
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    
-    # Konstruiere den Prompt mit History und Direktive
-    full_prompt = f"{st.session_state.directive}\n\n"
-    for msg in st.session_state.history[-6:]: # Letzte 6 Interaktionen für Kontext
-        full_prompt += f"{msg['role']}: {msg['content']}\n"
-    full_prompt += f"user: {user_input}"
-    
     try:
-        with st.spinner("⏳ Analysiere Datenstrom..."):
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        # Klare System-Vorgabe für jede Anfrage
+        directive = (
+            "Du bist die Sektor 4 Engine. Ein düsteres Cyberpunk-RPG in Berlin. "
+            "Antworte kurz und knackig. Starte die Story bei 'System Boot'. "
+            "Biete immer Optionen A, B, C an. Keine KI-Floskeln!"
+        )
+        
+        # Kontext-Konstruktion
+        full_prompt = f"{directive}\n\n"
+        for msg in st.session_state.history[-4:]: # Fokus auf die letzten 4
+            full_prompt += f"{msg['role']}: {msg['content']}\n"
+        full_prompt += f"user: {user_input}"
+        
+        with st.spinner("📟 SYNCHRONISIERE..."):
             response = model.generate_content(full_prompt)
-            if response.text:
-                st.session_state.log = response.text
-                st.session_state.history.append({"role": "user", "content": user_input})
-                st.session_state.history.append({"role": "assistant", "content": response.text})
+            
+            # Sicherheitscheck für die Antwort
+            if response and response.text:
+                output = response.text
             else:
-                st.session_state.log = "FEHLER: Leere Antwort von der Engine. Erneuter Versuch..."
+                output = "⚠️ DATENSTROM UNTERBROCHEN. Bitte Befehl erneut senden."
+            
+            st.session_state.log = output
+            st.session_state.history.append({"role": "user", "content": user_input})
+            st.session_state.history.append({"role": "assistant", "content": output})
+            
     except Exception as e:
         st.error(f"MATRIX-CRASH: {str(e)}")
 
-# --- INTERFACE ---
-st.markdown(f"**DATEN-LOG:**\n\n{st.session_state.log}")
+# --- UI ---
+st.info(st.session_state.log)
 st.write("---")
 
 c1, c2, c3 = st.columns(3)
-if c1.button("A"): run_logic("Option A"); st.rerun()
-if c2.button("B"): run_logic("Option B"); st.rerun()
-if c3.button("C"): run_logic("Option C"); st.rerun()
+if c1.button("Option A"): run_logic("Option A"); st.rerun()
+if c2.button("Option B"): run_logic("Option B"); st.rerun()
+if c3.button("Option C"): run_logic("Option C"); st.rerun()
 
-prompt = st.chat_input("Befehl eingeben...")
+prompt = st.chat_input("Befehl...")
 if prompt:
     run_logic(prompt)
     st.rerun()
