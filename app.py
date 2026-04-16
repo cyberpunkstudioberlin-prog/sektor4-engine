@@ -1,12 +1,18 @@
 import streamlit as st
 import google.generativeai as genai
 
+# Author: Murat Zengin
+# Project: Questbook / Sektor 4
+# Module: V57 Core
+
 st.set_page_config(page_title="Sektor 4 Core", page_icon="🦾")
 st.markdown("<style>.stApp {background-color: #050505; color: #00ff41;} .stButton>button {background-color: #111; color: #00ff41; border: 1px solid #00ff41;}</style>", unsafe_allow_html=True)
-st.title("Sektor 4: V56 Core 🦾")
+st.title("Sektor 4: V57 Core 🦾")
 
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-pro')
+
+# MATRIX FIX: Exakter Modellname mit -latest Suffix
+model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
 if "log" not in st.session_state:
     st.session_state.log = "SYSTEM BEREIT. Bitte 'System Boot' eingeben."
