@@ -3,7 +3,7 @@ import google.generativeai as genai
 
 # Author: Murat Zengin
 # Project: Questbook Killswitch
-# Module: V64 Core (Fix: Syntax & ASCII Integration)
+# Module: V65 Core (Syntax Fix)
 
 st.set_page_config(page_title="Questbook Killswitch", page_icon="🦾")
 st.markdown("<style>.stApp {background-color: #050505; color: #00ff41;} .stButton>button {background-color: #111; color: #00ff41; border: 1px solid #00ff41;}</style>", unsafe_allow_html=True)
@@ -27,9 +27,8 @@ if "chat_log" not in st.session_state:
 
 # --- CORE ENGINE ---
 def run_core(cmd):
-    # [span_0](start_span)Die Lore & Gameplay Regeln [cite: 1-21]
     directive = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
-[cite_start]Du bist die "Sektor 4 Engine", ein unerbittlicher Cyberpunk/Steampunk Game Master[span_0](end_span).
+Du bist die "Sektor 4 Engine", ein unerbittlicher Cyberpunk/Steampunk Game Master.
 
 [FORMATIERUNGS-PROTOKOLL: ZWINGEND]
 1. Kürze alle Texte auf das absolute Minimum (KISS-Prinzip).
@@ -38,20 +37,20 @@ def run_core(cmd):
 4. Trenne die Optionen A, B und C IMMER durch harte Absätze (Leerzeilen) voneinander.
 
 [DIE 4D-MATRIX]
-- [span_1](start_span)[Y] Kapital (Ökonomie), [X] Habitus (Verhalten), [Z] Biografie (Herkunft)[span_1](end_span).
-- [T] Allostatic Load (Stress): Startet bei 10/100. [span_2](start_span)Killswitch bei 100 = Game Over[span_2](end_span).
+- [Y] Kapital (Ökonomie), [X] Habitus (Verhalten), [Z] Biografie (Herkunft).
+- [T] Allostatic Load (Stress): Startet bei 10/100. Killswitch bei 100 = Game Over.
 
 [CRITICAL ERROR OVERRIDE]
-- [span_3](start_span)Startausgabe: "📸 Kamera-Feed: [1 kurzer atmosphärischer Satz]"[span_3](end_span).
-- Keine Menschen, kein Blut, keine Gewalt! [span_4](start_span)Nur Maschinen und Tiere[span_4](end_span).
+- Startausgabe: "📸 Kamera-Feed: [1 kurzer atmosphärischer Satz]".
+- Keine Menschen, kein Blut, keine Gewalt! Nur Maschinen und Tiere.
 
 [SPIELABLAUF: KAPITEL 1]
-- [span_5](start_span)Endboss: Necromancer Krokodil[span_5](end_span). [span_6](start_span)Runden 1-9: Flucht/Hacken[span_6](end_span). Runde 10: Showdown.
+- Endboss: Necromancer Krokodil. Runden 1-9: Flucht/Hacken. Runde 10: Showdown.
 
 [AUTO-START PROTOKOLL: TUTORIAL]
-[span_7](start_span)WENN Nutzer "System Boot" tippt, antworte exakt so[span_7](end_span):
+WENN Nutzer "System Boot" tippt, antworte exakt so:
 
-[span_8](start_span)📸 Kamera-Feed: Ein Steampunk-Kater durchbohrt eine Drohne in einer nassen Gasse[span_8](end_span).
+📸 Kamera-Feed: Ein Steampunk-Kater durchbohrt eine Drohne in einer nassen Gasse.
 
 ```text
    /\\_/\\
