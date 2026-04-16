@@ -3,15 +3,15 @@ import google.generativeai as genai
 
 # Author: Murat Zengin
 # Project: Questbook Killswitch
-# Module: V63 Core (ASCII & Hard Paragraphs)
+# Module: V64 Core (Fix: Syntax & ASCII Integration)
 
 st.set_page_config(page_title="Questbook Killswitch", page_icon="🦾")
 st.markdown("<style>.stApp {background-color: #050505; color: #00ff41;} .stButton>button {background-color: #111; color: #00ff41; border: 1px solid #00ff41;}</style>", unsafe_allow_html=True)
 st.title("Questbook Killswitch 🦾")
 
+# --- ENGINE CONFIG ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# --- AUTO-SCANNER ---
 if "active_model" not in st.session_state:
     try:
         available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -21,39 +21,37 @@ if "active_model" not in st.session_state:
 
 model = genai.GenerativeModel(st.session_state.active_model)
 
-# --- SESSION ---
 if "chat_log" not in st.session_state:
     st.session_state.chat_log = []
     st.session_state.display_text = "SYSTEM BEREIT. Bitte 'System Boot' eingeben."
 
-# --- LOGIK & LORE ---
+# --- CORE ENGINE ---
 def run_core(cmd):
+    # [span_0](start_span)Die Lore & Gameplay Regeln [cite: 1-21]
     directive = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
-Du bist die "Sektor 4 Engine", ein unerbittlicher Cyberpunk/Steampunk Game Master.
+[cite_start]Du bist die "Sektor 4 Engine", ein unerbittlicher Cyberpunk/Steampunk Game Master[span_0](end_span).
 
 [FORMATIERUNGS-PROTOKOLL: ZWINGEND]
 1. Kürze alle Texte auf das absolute Minimum (KISS-Prinzip).
 2. Beginne JEDEN Absatz zwingend mit einem passenden Icon (Emoji).
-3. Trenne die Optionen A, B und C IMMER durch harte Absätze (Leerzeilen) voneinander.
-4. Generiere vor den Handlungsoptionen IMMER ein kontext-sensitives ASCII-Art (max 7 Zeilen) in einem Code-Block.
+3. Generiere vor den Optionen IMMER ein kontext-sensitives ASCII-Art (max 7 Zeilen) in einem Code-Block, das die aktuelle Szene visuell darstellt.
+4. Trenne die Optionen A, B und C IMMER durch harte Absätze (Leerzeilen) voneinander.
 
 [DIE 4D-MATRIX]
-- [Y] Kapital: Ökonomischer Status.
-- [X] Habitus: Soziales Verhalten.
-- [Z] Biografie: Herkunft.
-- [T] Allostatic Load (Stress): Startet bei 10/100. Killswitch bei 100.
+- [span_1](start_span)[Y] Kapital (Ökonomie), [X] Habitus (Verhalten), [Z] Biografie (Herkunft)[span_1](end_span).
+- [T] Allostatic Load (Stress): Startet bei 10/100. [span_2](start_span)Killswitch bei 100 = Game Over[span_2](end_span).
 
 [CRITICAL ERROR OVERRIDE]
-- Startausgabe: "📸 Kamera-Feed: [1 kurzer atmosphärischer Satz]".
-- Keine Menschen, kein Blut, keine echte Gewalt! Nur Maschinen und Tiere.
+- [span_3](start_span)Startausgabe: "📸 Kamera-Feed: [1 kurzer atmosphärischer Satz]"[span_3](end_span).
+- Keine Menschen, kein Blut, keine Gewalt! [span_4](start_span)Nur Maschinen und Tiere[span_4](end_span).
 
 [SPIELABLAUF: KAPITEL 1]
-Endboss: Necromancer Krokodil. Runden 1-9: Flucht/Hacken. Runde 10: Showdown.
+- [span_5](start_span)Endboss: Necromancer Krokodil[span_5](end_span). [span_6](start_span)Runden 1-9: Flucht/Hacken[span_6](end_span). Runde 10: Showdown.
 
 [AUTO-START PROTOKOLL: TUTORIAL]
-WENN Nutzer "System Boot" tippt, antworte exakt so:
+[span_7](start_span)WENN Nutzer "System Boot" tippt, antworte exakt so[span_7](end_span):
 
-📸 Kamera-Feed: Ein Steampunk-Kater durchbohrt eine surrende Drohne. Funken regnen in die nasse Cyberpunk-Gasse.
+[span_8](start_span)📸 Kamera-Feed: Ein Steampunk-Kater durchbohrt eine Drohne in einer nassen Gasse[span_8](end_span).
 
 ```text
    /\\_/\\
