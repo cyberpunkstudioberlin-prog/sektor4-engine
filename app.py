@@ -2,62 +2,77 @@ import streamlit as st
 import google.generativeai as genai
 
 # Author: Murat Zengin
-# Sektor 4 - Legacy Core (Text-Only)
+# Sektor 4: Mainframe - RESTORE V44 (Pure Text)
 
-# --- CONFIG ---
-st.set_page_config(page_title="Sektor 4 Legacy", page_icon="📟")
-st.markdown("<style>.stApp {background-color: #050505; color: #00ff41;} .stButton>button {background-color: #111; color: #00ff41; border: 1px solid #00ff41;}</style>", unsafe_allow_html=True)
+# --- 1. VISUAL TERMINAL SETUP ---
+st.set_page_config(page_title="Sektor 4: Mainframe", page_icon="💪🏽")
 
-st.title("Sektor 4: Legacy Core 📟")
+st.markdown("""
+<style>
+    .stApp { background-color: #050505; color: #00ff41; font-family: 'Courier New', monospace; }
+    .stButton>button { width: 100%; background-color: #050505; color: #00ff41; border: 1px solid #00ff41; border-radius: 5px; }
+    .stTextInput>div>div>input { background-color: #000; color: #00ff41; border: 1px solid #00ff41; }
+    code { color: #00ff41 !important; background-color: transparent !important; }
+</style>
+""", unsafe_allow_html=True)
 
-# --- API ---
+st.title("Sektor 4: Mainframe 💪🏽")
+
+# --- 2. ENGINE CONFIG ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# --- SESSION ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-    st.session_state.system_prompt = (
-        "Du bist die Sektor 4 Engine. Cyberpunk-RPG Berlin. "
-        "Kurze, düstere Antworten. Keine KI-Floskeln. Immer Optionen A, B, C anbieten. "
-        "Reagiere auf 'System Boot' mit dem Spielstart."
+if "mainframe_log" not in st.session_state:
+    st.session_state.mainframe_log = "SYSTEM BEREIT. Bitte 'System Boot' eingeben."
+    st.session_state.history = []
+
+# --- 3. LOGIC CORE ---
+def execute_mainframe(user_input):
+    # Wir nutzen gemini-1.5-pro für maximale Stabilität gegen 404 Fehler
+    model = genai.GenerativeModel('gemini-1.5-pro')
+    
+    miau_directive = (
+        "Du bist die Sektor 4 Engine. Persona: MIAU (Kybernetischer Kater). "
+        "Das ist ein hartes Cyberpunk-Textadventure in Berlin. "
+        "Antworte im Stil eines Terminals: Grün, düster, direkt. "
+        "Nutze 'QUESTBOOK KILLSWITCH GM V44 AKTIVIERT' als Header beim Start. "
+        "Beende jede Antwort mit: Wähle A, B oder C. Keine KI-Floskeln."
     )
-
-# --- DISPLAY ---
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# --- LOGIK ---
-def chat(text):
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    # Wir schicken den gesamten Verlauf als flachen Text für maximale Stabilität
-    prompt = st.session_state.system_prompt + "\n\n"
-    for m in st.session_state.messages[-10:]: # Letzte 10 Nachrichten für Kontext
-        prompt += f"{m['role']}: {m['content']}\n"
-    prompt += f"user: {text}"
+    
+    # Context-Build
+    prompt = f"{miau_directive}\n\n"
+    for msg in st.session_state.history[-6:]:
+        prompt += f"{msg['role']}: {msg['content']}\n"
+    prompt += f"user: {user_input}"
     
     try:
-        response = model.generate_content(prompt)
-        if response.text:
-            st.session_state.messages.append({"role": "user", "content": text})
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-            st.rerun()
+        with st.spinner("Lade Sektor-Daten..."):
+            response = model.generate_content(prompt)
+            if response.text:
+                st.session_state.mainframe_log = response.text
+                st.session_state.history.append({"role": "user", "content": user_input})
+                st.session_state.history.append({"role": "assistant", "content": response.text})
     except Exception as e:
-        st.error(f"MATRIX CRASH: {e}")
+        st.error(f"TERMINAL ERROR: {str(e)}")
 
-# --- INPUT ---
-st.write("---")
+# --- 4. INTERFACE ---
+# Das Display-Feld wie im Screenshot
+st.markdown(f"```text\n{st.session_state.mainframe_log}\n```")
+
+st.write("/// SCHNELLEINGABE ///")
 c1, c2, c3 = st.columns(3)
-if c1.button("A"): chat("Option A")
-if c2.button("B"): chat("Option B")
-if c3.button("C"): chat("Option C")
+if c1.button("Option A"): execute_mainframe("Option A"); st.rerun()
+if c2.button("Option B"): execute_mainframe("Option B"); st.rerun()
+if c3.button("Option C"): execute_mainframe("Option C"); st.rerun()
 
-user_in = st.chat_input("System Boot eingeben...")
-if user_in:
-    chat(user_in)
-
-# --- ADMIN ---
-if st.sidebar.button("HARD RESET"):
-    st.session_state.messages = []
+# Eingabe-Feld am Ende
+cmd = st.chat_input("Tippe 'System Boot' oder deine Aktion...")
+if cmd:
+    execute_mainframe(cmd)
     st.rerun()
-    
+
+# Reset-Switch in der Sidebar
+with st.sidebar:
+    if st.button("SYSTEM RESET"):
+        st.session_state.clear()
+        st.rerun()
+        
