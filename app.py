@@ -2,12 +2,14 @@ import streamlit as st
 import google.generativeai as genai
 import time
 import re
+import requests
+import base64
 import io
 from PIL import Image
 
 # Author: Murat Zengin
 # Project: Questbook Killswitch
-# Module: V73 Master Core (Stabilisiert)
+# Module: V74 Master Core (Stable Inferenz)
 
 # --- UI INITIALISIERUNG ---
 st.set_page_config(
@@ -41,48 +43,62 @@ if "GOOGLE_API_KEY" not in st.secrets:
     st.error("SYSTEM ERROR: API-Key fehlt in den Secrets.")
     st.stop()
 
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+# Wir nutzen die vom System vorgegebenen Modelle für 2026
+TEXT_MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
+IMAGE_MODEL_NAME = "imagen-4.0-generate-001"
+API_KEY = st.secrets["GOOGLE_API_KEY"]
 
-# --- HILFSFUNKTIONEN FÜR STABILITÄT ---
+# --- HILFSFUNKTIONEN FÜR STABILITÄT (BACKOFF) ---
 
-def call_with_exponential_backoff(func, *args, **kwargs):
-    """Implementiert Backoff: 1s, 2s, 4s, 8s, 16s."""
+def call_text_api_with_backoff(prompt):
+    """Ruft die Gemini Text API mit Exponential Backoff auf (1, 2, 4, 8, 16s)."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{TEXT_MODEL_NAME}:generateContent?key={API_KEY}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "systemInstruction": {"parts": [{"text": "Du bist die Sektor 4 Engine. Antworte kurz, zynisch und nutze Emojis."}]}
+    }
+    
     delays = [1, 2, 4, 8, 16]
     for i, delay in enumerate(delays):
         try:
-            return func(*args, **kwargs)
+            response = requests.post(url, json=payload)
+            if response.status_code == 429:
+                time.sleep(delay)
+                continue
+            response.raise_for_status()
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text']
         except Exception as e:
-            err = str(e).lower()
-            if "429" in err or "quota" in err or "too many" in err:
-                if i < len(delays) - 1:
-                    time.sleep(delay)
-                    continue
-            raise e
-    return func(*args, **kwargs)
+            if i == len(delays) - 1:
+                raise e
+            time.sleep(delay)
+    return "Fehler bei der Inferenz."
 
-def get_stable_model_names():
-    """Findet verfügbare Modelle dynamisch."""
-    try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        text = next((m for m in models if "gemini-2.5-flash-preview-09-2025" in m),
-               next((m for m in models if "gemini-2.5-flash" in m),
-               next((m for m in models if "gemini-1.5-flash" in m), "models/gemini-1.5-flash")))
-        
-        img_models = [m.name for m in genai.list_models() if 'predict' in m.supported_generation_methods or 'generateContent' in m.supported_generation_methods]
-        image = next((m for m in img_models if "imagen-4.0" in m),
-                next((m for m in img_models if "imagen-3.0" in m), "models/imagen-3.0-generate-001"))
-        
-        return text, image
-    except:
-        return "models/gemini-1.5-flash", "models/imagen-3.0-generate-001"
-
-if "text_model_name" not in st.session_state:
-    t_name, i_name = get_stable_model_names()
-    st.session_state.text_model_name = t_name
-    st.session_state.image_model_name = i_name
-
-text_model = genai.GenerativeModel(st.session_state.text_model_name)
-image_model = genai.GenerativeModel(st.session_state.image_model_name)
+def generate_image_with_backoff(prompt):
+    """Ruft die Imagen API mit Exponential Backoff auf."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{IMAGE_MODEL_NAME}:predict?key={API_KEY}"
+    payload = {
+        "instances": {"prompt": f"vertical 9:16 aspect ratio, cyberpunk, steampunk, no humans, {prompt}"},
+        "parameters": {"sampleCount": 1}
+    }
+    
+    delays = [1, 2, 4, 8, 16]
+    for i, delay in enumerate(delays):
+        try:
+            response = requests.post(url, json=payload)
+            if response.status_code == 429:
+                time.sleep(delay)
+                continue
+            response.raise_for_status()
+            result = response.json()
+            img_b64 = result['predictions'][0]['bytesBase64Encoded']
+            st.session_state.current_image = img_b64
+            return img_b64
+        except Exception as e:
+            if i == len(delays) - 1:
+                return None
+            time.sleep(delay)
+    return None
 
 # --- SESSION STATE ---
 if "chat_log" not in st.session_state:
@@ -92,78 +108,66 @@ if "chat_log" not in st.session_state:
     st.session_state.matrix = {"Y": "Unbekannt", "X": "Unbekannt", "T": 10}
     st.session_state.round = 0
 
-# --- BILDGENERATOR ---
-def generate_visual(prompt):
-    safety_prompt = (
-        f"vertical 9:16 mobile aspect ratio. Sektor 4 aesthetic, cinematic. "
-        f"NO HUMANS, no blood. Cybernetic machines, steampunk creatures: {prompt}"
-    )
-    try:
-        response = call_with_exponential_backoff(image_model.generate_content, safety_prompt)
-        img_data = response.candidates[0].content.parts[0].inline_data.data
-        st.session_state.current_image = img_data
-        return img_data
-    except Exception as e:
-        st.sidebar.warning(f"Inferenz-Konflikt: {str(e)}")
-        return None
-
-# --- CORE LOGIK ---
+# --- ENGINE LOGIK ---
 def run_engine(user_input):
-    directive = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
-Du bist die "Sektor 4 Engine". Nutze die 4D-Matrix: [Y] Kapital, [X] Habitus, [T] Stress.
-Stress (T) startet bei 10. Killswitch bei 100 = GAME OVER.
-Regeln: 1. Starte mit '📷 Kamera-Feed: [1 Satz]'. 2. KEINE Menschen. 3. Struktur: Bild-Prompt, Story, Optionen (A, B, C), HUD.
+    directive = f"""[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
+Du bist die "Sektor 4 Engine".
+4D-MATRIX: [Y] Kapital, [X] Habitus, [T] Stress (10-100).
+REGELN:
+1. Starte mit '📷 Kamera-Feed: [1 Satz]'.
+2. KEINE Menschen.
+3. Kapitel 1: Flucht vor dem Necromancer Krokodil.
+User wählt: {user_input} | Status: {st.session_state.matrix}
 """
     
-    if user_input.upper() == "SYSTEM BOOT":
-        boot_prompt = "A steampunk cat with green glowing optics in a rainy cyberpunk alley."
-        generate_visual(boot_prompt)
-        prompt = f"{directive}\nInitialisiere Simulation. Starte Tutorial."
-    else:
-        prompt = f"{directive}\nStatus: {st.session_state.matrix}\nHistorie: {st.session_state.chat_log[-2:]}\nUser wählt: {user_input}"
-
     try:
-        response = call_with_exponential_backoff(text_model.generate_content, prompt)
-        output_text = response.text
-        
-        feed_match = re.search(r"📷 Kamera-Feed: (.*)", output_text)
-        if feed_match and user_input.upper() != "SYSTEM BOOT":
-            generate_visual(feed_match.group(1))
+        with st.spinner("Synchronisiere Matrix..."):
+            output_text = call_text_api_with_backoff(directive)
             
-        st.session_state.display_text = output_text
-        st.session_state.chat_log.append({"role": "user", "content": user_input})
-        st.session_state.chat_log.append({"role": "assistant", "content": output_text})
-        st.session_state.round += 1
+            # Bild-Prompt Parsing
+            feed_match = re.search(r"📷 Kamera-Feed: (.*)", output_text)
+            if feed_match:
+                generate_image_with_backoff(feed_match.group(1))
+            elif user_input.upper() == "SYSTEM BOOT":
+                generate_image_with_backoff("A steampunk cat with glowing eyes in a rainy alley")
             
+            st.session_state.display_text = output_text
+            st.session_state.round += 1
     except Exception as e:
         st.session_state.display_text = f"CRITICAL MATRIX CRASH: {str(e)}"
 
 # --- UI LAYOUT ---
+
+# 1. BILD (Mandatory Image-First)
 if st.session_state.current_image:
-    st.image(st.session_state.current_image, use_container_width=True)
+    st.image(base64.b64decode(st.session_state.current_image), use_container_width=True)
     st.markdown('<div class="synthid-badge">SYNTHID VERIFIED // PIXEL-EMBEDDED</div>', unsafe_allow_html=True)
 else:
     st.markdown("""<div style="width:100%; height:300px; background:#111; border:1px solid #333; 
         display:flex; align-items:center; justify-content:center; color:#333;">[KAMERA-FEED OFFLINE]</div>""", unsafe_allow_html=True)
 
+# 2. TEXT
 st.markdown("---")
 st.markdown(st.session_state.display_text)
 st.markdown('<div class="synthid-badge" style="border:none; border-left:1px solid #00ff41;">TOURNAMENT SAMPLING SIGNATURE: ACTIVE</div>', unsafe_allow_html=True)
 
+# 3. INTERAKTION
 st.write("")
 c1, c2, c3 = st.columns(3)
 if c1.button("A"): run_engine("A"); st.rerun()
 if c2.button("B"): run_engine("B"); st.rerun()
 if c3.button("C"): run_engine("C"); st.rerun()
 
+# 4. INPUT
 cmd = st.chat_input("Konsoleneingabe...")
 if cmd:
     run_engine(cmd)
     st.rerun()
 
+# 5. SIDEBAR (HUD)
 with st.sidebar:
     st.header("⚙️ System-HUD")
-    st.write(f"Inferenz-Tier: {st.session_state.get('text_model_name', 'Verbinde...')}")
+    st.write(f"Inferenz: {TEXT_MODEL_NAME}")
     st.write(f"Runde: {st.session_state.round}/10")
     st.progress(st.session_state.matrix["T"] / 100, text=f"ALI (Stress): {st.session_state.matrix['T']}%")
     if st.button("Matrix Reset"):
