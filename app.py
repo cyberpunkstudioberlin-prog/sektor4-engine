@@ -1,14 +1,14 @@
+```python
 import streamlit as st
 import google.generativeai as genai
 import time
 import re
-import base64
 import io
 from PIL import Image
 
 # Autor: Murat Zengin
 # Projekt: Questbook Killswitch
-# Modul: V72 Stable Core (Inferenz-Stabilisierung & SynthID)
+# Modul: V73 Master Core (Backoff-Fix & Inferenz-Stabilisierung)
 
 # --- UI INITIALISIERUNG ---
 st.set_page_config(
@@ -30,7 +30,7 @@ st.markdown("""
     div[data-testid="stSidebar"] { background-color: #0a0a0a; border-right: 1px solid #00ff41; }
     .synthid-badge { 
         color: #00ff41; font-size: 0.7rem; border: 1px solid #00ff41; 
-        padding: 2px 5px; border-radius: 3px; opacity: 0.7;
+        padding: 2px 5px; border-radius: 3px; opacity: 0.7; margin-top: 5px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -42,95 +42,98 @@ if "GOOGLE_API_KEY" not in st.secrets:
     st.error("SYSTEM ERROR: API-Key fehlt in den Secrets.")
     st.stop()
 
+# Wir setzen den API Key global
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# --- HILFSFUNKTIONEN FÜR STABILITÄT (FIX 429) ---
+# --- HILFSFUNKTIONEN FÜR STABILITÄT (FIX 429 & 404) ---
 
-def call_gemini_with_backoff(model, prompt, max_retries=5):
-    """Implementiert Exponential Backoff für Quota-Fehler."""
-    for i in range(max_retries):
+def call_with_exponential_backoff(func, *args, **kwargs):
+    """Implementiert Backoff: 1s, 2s, 4s, 8s, 16s nach System-Regel."""
+    delays = [1, 2, 4, 8, 16]
+    for i, delay in enumerate(delays):
         try:
-            response = model.generate_content(prompt)
-            return response
+            return func(*args, **kwargs)
         except Exception as e:
-            err_msg = str(e).lower()
-            if "429" in err_msg or "quota" in err_msg:
-                wait_time = 2**i + (0.1 * i)
-                time.sleep(wait_time)
-                continue
-            else:
-                raise e
-    raise Exception("Maximale Retries nach 429-Fehler erreicht.")
+            err = str(e).lower()
+            if "429" in err or "quota" in err or "too many" in err:
+                if i < len(delays) - 1:
+                    time.sleep(delay)
+                    continue
+            # Wenn es ein 404 ist oder alle Retries fehlschlagen
+            raise e
+    return func(*args, **kwargs)
 
-# --- DYNAMISCHE MODELL-AUSWAHL (FIX 404) ---
-if "active_text_model_name" not in st.session_state:
+def get_stable_model_names():
+    """Findet verfügbare Modelle dynamisch oder nutzt stabilste Defaults."""
     try:
-        # Scannt verfügbare Modelle im aktuellen Inferenz-Tier
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Prioritäten-Matrix für Sektor 4
-        target = next((m for m in models if "gemini-1.5-pro-latest" in m),
-                 next((m for m in models if "gemini-1.5-pro" in m),
-                 next((m for m in models if "gemini-1.5-flash" in m), models[0])))
-        st.session_state.active_text_model_name = target
+        text = next((m for m in models if "gemini-2.5-flash-preview-09-2025" in m),
+               next((m for m in models if "gemini-2.5-flash" in m),
+               next((m for m in models if "gemini-1.5-flash" in m), "models/gemini-1.5-flash")))
+        
+        # Für Imagen nutzen wir den stabilsten Pfad
+        img_models = [m.name for m in genai.list_models() if 'predict' in m.supported_generation_methods or 'generateContent' in m.supported_generation_methods]
+        image = next((m for m in img_models if "imagen-4.0" in m),
+                next((m for m in img_models if "imagen-3.0" in m), "models/imagen-3.0-generate-001"))
+        
+        return text, image
     except:
-        # Hardcoded Fallback
-        st.session_state.active_text_model_name = "models/gemini-1.5-pro-latest"
+        return "models/gemini-1.5-flash", "models/imagen-3.0-generate-001"
 
-text_model = genai.GenerativeModel(st.session_state.active_text_model_name)
-# Bild-Modell (Standard-Referenz für Imagen 3)
-image_model = genai.GenerativeModel('imagen-3.0-generate-001')
+# Initialisierung der Modell-Namen
+if "text_model_name" not in st.session_state:
+    t_name, i_name = get_stable_model_names()
+    st.session_state.text_model_name = t_name
+    st.session_state.image_model_name = i_name
+
+text_model = genai.GenerativeModel(st.session_state.text_model_name)
+image_model = genai.GenerativeModel(st.session_state.image_model_name)
 
 # --- SESSION STATE ---
 if "chat_log" not in st.session_state:
     st.session_state.chat_log = []
     st.session_state.display_text = "SYSTEM BEREIT. Bitte 'System Boot' eingeben."
     st.session_state.current_image = None
-    st.session_state.matrix = {"Y": "Unbekannt", "X": "Unbekannt", "T": 10, "Z": "Unbekannt"}
+    st.session_state.matrix = {"Y": "Unbekannt", "X": "Unbekannt", "T": 10}
     st.session_state.round = 0
 
 # --- BILDGENERATOR (IMAGEN) ---
 def generate_visual(prompt):
-    """Erzeugt 9:16 Visuals ohne Menschen (Sektor 4 Safety-Protokoll)."""
+    """Erzeugt 9:16 Visuals ohne Menschen."""
     safety_prompt = (
-        f"9:16 vertical mobile aspect ratio. Sektor 4 aesthetic, dark cyberpunk. "
-        f"NO HUMANS, no blood. Focus on machines, steampunk cats or drones. "
-        f"Cinematic lighting: {prompt}"
+        f"vertical 9:16 mobile aspect ratio. Sektor 4 aesthetic, cinematic. "
+        f"NO HUMANS, no blood. Cybernetic machines, steampunk creatures: {prompt}"
     )
     try:
-        response = call_gemini_with_backoff(image_model, safety_prompt)
-        # Extraktion der Inline-Bilddaten
+        response = call_with_exponential_backoff(image_model.generate_content, safety_prompt)
+        # Extraktion der Bilddaten
         img_data = response.candidates[0].content.parts[0].inline_data.data
         st.session_state.current_image = img_data
         return img_data
     except Exception as e:
-        st.sidebar.warning(f"Bild-Inferenz verzögert: {str(e)}")
+        st.sidebar.warning(f"Inferenz-Konflikt: {str(e)}")
         return None
 
 # --- ENGINE LOGIK ---
 def run_engine(user_input):
     directive = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
-Du bist die "Sektor 4 Engine". Nutze die 4D-Matrix: [Y] Kapital, [X] Habitus, [Z] Biografie, [T] Stress.
-T-Load startet bei 10. Killswitch bei 100 = GAME OVER.
-
-REGELN:
-1. Beginne IMMER mit: "📷 Kamera-Feed: [1 atmosphärischer Satz]".
-2. KEINE Menschen oder Gewalt an Menschen beschreiben/generieren.
-3. Struktur: Bild-Prompt, Story (KISS), MC-Optionen (A, B, C), HUD.
-4. Kapitel 1: Flucht vor dem Necromancer Krokodil.
+Du bist die "Sektor 4 Engine". Nutze die 4D-Matrix: [Y] Kapital, [X] Habitus, [T] Stress.
+Stress (T) startet bei 10. Killswitch bei 100 = GAME OVER.
+Regeln: 1. Starte mit '📷 Kamera-Feed: [1 Satz]'. 2. KEINE Menschen. 3. Struktur: Bild-Prompt, Story, Optionen (A, B, C), HUD.
 """
     
     if user_input.upper() == "SYSTEM BOOT":
-        boot_prompt = "A steampunk cat with glowing green eyes in a dark rainy alleyway."
+        boot_prompt = "A steampunk cat with green glowing optics in a rainy cyberpunk alley."
         generate_visual(boot_prompt)
-        prompt = f"{directive}\nInitialisiere Sektor 4. Starte Tutorial."
+        prompt = f"{directive}\nInitialisiere Simulation. Starte Tutorial."
     else:
         prompt = f"{directive}\nStatus: {st.session_state.matrix}\nHistorie: {st.session_state.chat_log[-2:]}\nUser wählt: {user_input}"
 
     try:
-        response = call_gemini_with_backoff(text_model, prompt)
+        response = call_with_exponential_backoff(text_model.generate_content, prompt)
         output_text = response.text
         
-        # Bild für die nächste Runde vorbereiten (Kamera-Feed Parsing)
+        # Bild-Prompt Parsing
         feed_match = re.search(r"📷 Kamera-Feed: (.*)", output_text)
         if feed_match and user_input.upper() != "SYSTEM BOOT":
             generate_visual(feed_match.group(1))
@@ -174,15 +177,13 @@ if cmd:
 # 5. SIDEBAR (HUD)
 with st.sidebar:
     st.header("⚙️ System-HUD")
-    st.write(f"Inferenz-Knoten: {st.session_state.active_text_model_name}")
+    st.write(f"Inferenz-Tier: {st.session_state.get('text_model_name', 'Verbinde...')}")
+    st.write(f"Bild-Knoten: {st.session_state.get('image_model_name', 'Verbinde...')}")
     st.write(f"Runde: {st.session_state.round}/10")
     st.progress(st.session_state.matrix["T"] / 100, text=f"ALI (Stress): {st.session_state.matrix['T']}%")
-    
-    st.markdown("---")
-    st.markdown("**4D-Vektoren:**")
-    st.write(f"Kapital (Y): {st.session_state.matrix['Y']}")
-    st.write(f"Habitus (X): {st.session_state.matrix['X']}")
     
     if st.button("Matrix Reset"):
         st.session_state.clear()
         st.rerun()
+
+```
