@@ -1,99 +1,159 @@
 import streamlit as st
 import google.generativeai as genai
+from PIL import Image
+import io
+import re
 
 # Author: Murat Zengin
 # Project: Questbook Killswitch
-# Module: V66 Core (No ASCII)
+# Module: V71 Core (Multimodal Image Integration)
 
-st.set_page_config(page_title="Questbook Killswitch", page_icon="🦾")
-st.markdown("<style>.stApp {background-color: #050505; color: #00ff41;} .stButton>button {background-color: #111; color: #00ff41; border: 1px solid #00ff41;}</style>", unsafe_allow_html=True)
+st.set_page_config(page_title="Questbook Killswitch", page_icon="🦾", layout="centered")
+
+# --- CUSTOM STYLING ---
+st.markdown("""
+    <style>
+    .stApp { background-color: #050505; color: #00ff41; font-family: 'Courier New', monospace; }
+    .stButton>button { 
+        background-color: #111; color: #00ff41; border: 1px solid #00ff41; 
+        width: 100%; border-radius: 4px; transition: 0.3s;
+    }
+    .stButton>button:hover { background-color: #00ff41; color: #000; }
+    .stChatInput { border-top: 1px solid #333; }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("Questbook Killswitch 🦾")
 
 # --- ENGINE CONFIG ---
+if "GOOGLE_API_KEY" not in st.secrets:
+    st.error("SYSTEM ERROR: API-Key nicht gefunden. Bitte in den Secrets hinterlegen.")
+    st.stop()
+
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-if "active_model" not in st.session_state:
-    try:
-        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        st.session_state.active_model = next((m for m in available if "gemini-2.5" in m), next((m for m in available if "gemini-1.5" in m), available[0]))
-    except Exception:
-        st.session_state.active_model = "models/gemini-1.5-pro-latest"
+# Modelle initialisieren
+# Hinweis: Imagen 3 wird über das GenerativeModel Interface aufgerufen
+text_model = genai.GenerativeModel('gemini-1.5-pro')
+image_model = genai.GenerativeModel('imagen-3.0-generate-001')
 
-model = genai.GenerativeModel(st.session_state.active_model)
-
+# --- SESSION STATE ---
 if "chat_log" not in st.session_state:
     st.session_state.chat_log = []
     st.session_state.display_text = "SYSTEM BEREIT. Bitte 'System Boot' eingeben."
+    st.session_state.current_image = None
+    st.session_state.matrix = {"Y": "Unbekannt", "X": "Unbekannt", "T": 10}
+    st.session_state.round = 0
 
-# --- CORE ENGINE ---
-def run_core(cmd):
+# --- BILDGENERATOR (IMAGEN 3) ---
+def generate_sektor_visual(scene_description):
+    """
+    Erzeugt ein 9:16 Bild basierend auf der Sektor 4 Lore.
+    Implementiert den Safety-Bypass (keine Menschen).
+    """
+    safety_prompt = (
+        f"9:16 vertical mobile aspect ratio. Sektor 4 Cyberpunk/Steampunk aesthetic. "
+        f"Cinematic lighting, rainy atmosphere, ultra-detailed. "
+        f"STRICTLY NO HUMANS, no blood. Focus on machines, robots, "
+        f"anthropomorphic steampunk cat or biomechanical crocodile: {scene_description}"
+    )
+    
+    try:
+        with st.spinner("Generiere Visual-Asset..."):
+            # Generierung starten
+            response = image_model.generate_content(safety_prompt)
+            # Extrahiere Bilddaten (Bytes)
+            img_data = response.candidates[0].content.parts[0].inline_data.data
+            st.session_state.current_image = img_data
+            return img_data
+    except Exception as e:
+        # Fallback oder Fehlermeldung (oft wenn Safety Filter greift)
+        st.sidebar.warning(f"Bild-Inferenz unterbrochen: {str(e)}")
+        return None
+
+# --- CORE LOGIK ---
+def run_engine(user_input):
     directive = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
 Du bist die "Sektor 4 Engine", ein unerbittlicher Cyberpunk/Steampunk Game Master.
 
-[FORMATIERUNGS-PROTOKOLL: ZWINGEND]
-1. Kürze alle Texte auf das absolute Minimum (KISS-Prinzip).
-2. Beginne JEDEN Absatz zwingend mit einem passenden Icon (Emoji).
-3. Trenne die Optionen A, B und C IMMER durch harte Absätze (Leerzeilen) voneinander.
-
 [DIE 4D-MATRIX]
-- [Y] Kapital (Ökonomie), [X] Habitus (Verhalten), [Z] Biografie (Herkunft).
-- [T] Allostatic Load (Stress): Startet bei 10/100. Killswitch bei 100 = Game Over.
+- [Y] Kapital, [X] Habitus, [Z] Biografie, [T] Allostatic Load (Stress).
+- T-Load startet bei 10/100. Killswitch bei 100 = Game Over.
 
-[CRITICAL ERROR OVERRIDE]
-- Startausgabe: "📸 Kamera-Feed: [1 kurzer atmosphärischer Satz]".
-- Keine Menschen, kein Blut, keine Gewalt! Nur Maschinen und Tiere.
+[OPERATIVE REGELN]
+1. Jede Antwort MUSS mit einem "📷 Kamera-Feed: [1 Satz Szenerie]" beginnen.
+2. Keine Menschen, keine Gewalt gegen Menschen. Nur Maschinen/Tiere.
+3. Struktur: Bild-Prompt-Satz, Story-Text (KISS), Optionen A/B/C, HUD.
 
-[SPIELABLAUF: KAPITEL 1]
-- Endboss: Necromancer Krokodil. Runden 1-9: Flucht/Hacken. Runde 10: Showdown.
-
-[AUTO-START PROTOKOLL: TUTORIAL]
-WENN Nutzer "System Boot" tippt, antworte exakt so:
-
-📸 Kamera-Feed: Ein Steampunk-Kater durchbohrt eine Drohne in einer nassen Gasse.
-
-😼 "Knapp dem Datennirvana entkommen?", miaut der Kater (Deus). "Dein 'T-Load' ist dein Game-Over-Zähler. Bei 100 bist du Geschichte."
-
-🖥️ "Zeit für die Kalibrierung. Wenn du einen fehlerhaften Systemcode findest, was tust du?"
-
-🅰️ A: Ich melde den Fehler offiziell. Das System muss funktionieren.
-
-🅱️ B: Ich nutze den Bug zu meinem Vorteil. Korruption siegt.
-
-©️ C: Ich behebe den Fehler diskret selbst.
-
-🎯 Wähle A, B oder C.
-
-📊 === HUD === Runde: Tutorial | Y: Unbekannt | X: Unbekannt | T-Load: 10/100
+[KAPITEL 1] Necromancer Krokodil Jagd. Runden 1-9 Flucht, Runde 10 Showdown.
 """
-    context = f"{directive}\n\n"
-    for msg in st.session_state.chat_log[-4:]:
-        context += f"{msg['role']}: {msg['content']}\n"
-    context += f"user: {cmd}"
+    
+    # Spezialfall: System Boot
+    if user_input.upper() == "SYSTEM BOOT":
+        boot_image_prompt = "A steampunk cat standing on a neon-lit rooftop in the rain, holding a rapier."
+        generate_sektor_visual(boot_image_prompt)
+        
+        prompt = f"{directive}\nNutzer hat das System gestartet. Führe das Tutorial aus."
+    else:
+        prompt = f"{directive}\nHistorie: {st.session_state.chat_log[-3:]}\nStatus: {st.session_state.matrix}\nNutzer wählt: {user_input}"
 
     try:
-        with st.spinner("Matrix lädt Sektor 4 Lore..."):
-            response = model.generate_content(context)
-            if response.text:
-                st.session_state.display_text = response.text
-                st.session_state.chat_log.append({"role": "user", "content": cmd})
-                st.session_state.chat_log.append({"role": "assistant", "content": response.text})
+        with st.spinner("Matrix-Inferenz läuft..."):
+            response = text_model.generate_content(prompt)
+            output_text = response.text
+            
+            # Bild-Prompt für die NÄCHSTE Runde extrahieren (aus dem Kamera-Feed)
+            feed_match = re.search(r"📷 Kamera-Feed: (.*)", output_text)
+            if feed_match and user_input.upper() != "SYSTEM BOOT":
+                generate_sektor_visual(feed_match.group(1))
+            
+            st.session_state.display_text = output_text
+            st.session_state.chat_log.append({"role": "user", "content": user_input})
+            st.session_state.chat_log.append({"role": "assistant", "content": output_text})
+            st.session_state.round += 1
+            
     except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "quota" in error_msg.lower():
-            st.session_state.display_text = "⚠️ **SYSTEM ÜBERLASTET (FEHLER 429)**\n\nDas Google API Rate-Limit wurde erreicht. Bitte warte einige Minuten."
-        else:
-            st.session_state.display_text = f"MATRIX CRASH: {error_msg}"
+        st.session_state.display_text = f"CRITICAL MATRIX CRASH: {str(e)}"
 
-# --- UI INTERFACE ---
-st.markdown(f"**DATENSTROM:**\n\n{st.session_state.display_text}")
-st.write("---")
+# --- UI LAYOUT ---
 
+# 1. BILD (Ganz oben - Mandatory Image-First)
+if st.session_state.current_image:
+    st.image(st.session_state.current_image, use_container_width=True)
+else:
+    # Platzhalter vor dem ersten Boot
+    st.markdown("""
+        <div style="width:100%; height:300px; background:#111; border:1px solid #333; 
+        display:flex; align-items:center; justify-content:center; color:#333;">
+        [KAMERA-FEED OFFLINE]
+        </div>
+        """, unsafe_allow_html=True)
+
+# 2. TEXT-OUTPUT
+st.markdown("---")
+st.markdown(st.session_state.display_text)
+
+# 3. INTERAKTION
+st.write("")
 c1, c2, c3 = st.columns(3)
-if c1.button("A"): run_core("A"); st.rerun()
-if c2.button("B"): run_core("B"); st.rerun()
-if c3.button("C"): run_core("C"); st.rerun()
+if c1.button("A"): run_engine("A"); st.rerun()
+if c2.button("B"): run_engine("B"); st.rerun()
+if c3.button("C"): run_engine("C"); st.rerun()
 
-cmd_in = st.chat_input("Konsoleneingabe...")
-if cmd_in:
-    run_core(cmd_in)
+# 4. INPUT
+cmd = st.chat_input("Konsoleneingabe...")
+if cmd:
+    run_engine(cmd)
     st.rerun()
+
+# 5. SIDEBAR (HUD & Reset)
+with st.sidebar:
+    st.header("⚙️ System-HUD")
+    st.write(f"Runde: {st.session_state.round}")
+    st.write(f"Kapital (Y): {st.session_state.matrix['Y']}")
+    st.write(f"Habitus (X): {st.session_state.matrix['X']}")
+    st.progress(st.session_state.matrix['T'] / 100, text=f"T-Load: {st.session_state.matrix['T']}%")
+    
+    if st.button("Matrix Reset"):
+        st.session_state.clear()
+        st.rerun()
