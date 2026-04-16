@@ -1,62 +1,69 @@
 import streamlit as st
 import google.generativeai as genai
 
-# --- 1. CYBERPUNK DESIGN ---
-st.set_page_config(page_title="Sektor 4 Immortal", page_icon="🦾")
-st.markdown("<style>.stApp {background-color: #050505; color: #00ff41;} h1,p,div{font-family: 'Courier New', monospace; color: #00ff41;}</style>", unsafe_allow_html=True)
+# --- 1. SETTINGS & DESIGN ---
+st.set_page_config(page_title="Sektor 4 Phoenix", page_icon="🔥")
+st.markdown("<style>.stApp {background-color: #0d0d0d; color: #00ff41;} .stButton>button {width:100%; background-color: #1a1a1a; color: #00ff41; border: 1px solid #00ff41;}</style>", unsafe_allow_html=True)
 
-st.title("Sektor 4: Immortal Terminal 🦾")
+st.title("Sektor 4: Phoenix Terminal 🔥")
 
-# --- 2. API SETUP ---
+# --- 2. API INITIALISIERUNG ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# --- 3. AUTO-MODELL-SCANNER ---
-if "active_text_model" not in st.session_state:
+# --- 3. ROBUSTE MODELL-AUSWAHL ---
+if "active_model" not in st.session_state:
+    # Wir erzwingen hier 1.5-flash, da es am schnellsten reagiert
+    st.session_state.active_model = "gemini-1.5-flash"
+
+# --- 4. SESSION MANAGEMENT ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    st.session_state.last_response = "SYSTEM REBOOT ERFOLGREICH. Warte auf Eingabe..."
+
+# --- 5. DIE LOGIK-ENGINE ---
+def send_to_matrix(prompt):
+    model = genai.GenerativeModel(st.session_state.active_model)
+    
+    # Wir bauen den Kontext jedes Mal frisch auf, um "Hänger" zu vermeiden
+    full_context = "Du bist die Sektor 4 KI in einem Cyberpunk-Rollenspiel. Antworte kurz und atmosphärisch. "
+    for m in st.session_state.messages[-5:]: # Nur die letzten 5 Nachrichten für Stabilität
+        full_context += f"\n{m['role']}: {m['content']}"
+    full_context += f"\nuser: {prompt}"
+
     try:
-        # Wir suchen das beste Modell (bevorzugt 2.5 oder 1.5 Flash)
-        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        best_model = next((m for m in available if "2.5" in m), 
-                     next((m for m in available if "flash" in m), "models/gemini-1.5-flash"))
-        st.session_state.active_text_model = best_model
-    except:
-        st.session_state.active_text_model = "models/gemini-1.5-flash"
-
-st.write(f"/// SYSTEM-KERN: [{st.session_state.active_text_model}] AKTIV ///")
-
-# --- 4. SESSION INITIALISIERUNG ---
-if "matrix_session" not in st.session_state:
-    model = genai.GenerativeModel(st.session_state.active_text_model)
-    st.session_state.matrix_session = model.start_chat(history=[])
-    st.session_state.last_text = "SYSTEM BEREIT. Bitte 'System Boot' eingeben."
-
-# --- 5. ROBUSTE LOGIK MIT SPINNER ---
-def run_action(user_input):
-    with st.spinner("Signal wird durch die Matrix geroutet..."):
-        try:
-            response = st.session_state.matrix_session.send_message(user_input)
-            st.session_state.last_text = response.text
-        except Exception as e:
-            st.error(f"VERBINDUNGSFEHLER: {str(e)}")
-            # Falls das Modell abgestürzt ist, versuchen wir einen automatischen Reset
-            if "not_found" in str(e).lower():
-                st.session_state.clear()
-                st.rerun()
+        with st.spinner("⚡ Datenstrom wird stabilisiert..."):
+            response = model.generate_content(full_context)
+            if response.text:
+                st.session_state.last_response = response.text
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            else:
+                st.warning("Die Matrix schweigt. Versuche es erneut.")
+    except Exception as e:
+        st.error(f"MATRIX-FEHLER: {str(e)}")
+        if "404" in str(e) or "not found" in str(e).lower():
+            st.info("Modell-Konflikt erkannt. Setze System zurück...")
+            st.session_state.clear()
+            st.rerun()
 
 # --- 6. INTERFACE ---
-st.markdown(f"### AKTUELLER STATUS\n{st.session_state.last_text}")
+st.markdown(f"**STATUS:**\n{st.session_state.last_response}")
 
 st.write("---")
-c1, c2, c3 = st.columns(3)
-if c1.button("A"): run_action("A"); st.rerun()
-if c2.button("B"): run_action("B"); st.rerun()
-if c3.button("C"): run_action("C"); st.rerun()
+col1, col2, col3 = st.columns(3)
+if col1.button("Option A"): send_to_matrix("A"); st.rerun()
+if col2.button("Option B"): send_to_matrix("B"); st.rerun()
+if col3.button("Option C"): send_to_matrix("C"); st.rerun()
 
-cmd = st.chat_input("Befehl...")
-if cmd:
-    run_action(cmd)
+input_text = st.chat_input("Befehl an die Engine...")
+if input_text:
+    send_to_matrix(input_text)
     st.rerun()
 
-if st.sidebar.button("FORCE SYSTEM RESET"):
-    st.session_state.clear()
-    st.rerun()
-    
+# Sidebar für den Notfall
+with st.sidebar:
+    st.header("Admin-Konsole")
+    if st.button("KALTSTART (Clear Cache)"):
+        st.session_state.clear()
+        st.rerun()
+        
