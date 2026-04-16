@@ -3,7 +3,7 @@ import google.generativeai as genai
 
 # Author: Murat Zengin
 # Project: Questbook Killswitch
-# Module: V65 Core (Syntax Fix)
+# Module: V65.1 Clean Inject
 
 st.set_page_config(page_title="Questbook Killswitch", page_icon="🦾")
 st.markdown("<style>.stApp {background-color: #050505; color: #00ff41;} .stButton>button {background-color: #111; color: #00ff41; border: 1px solid #00ff41;}</style>", unsafe_allow_html=True)
@@ -27,7 +27,7 @@ if "chat_log" not in st.session_state:
 
 # --- CORE ENGINE ---
 def run_core(cmd):
-    directive = """[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
+    directive = ""[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM]
 Du bist die "Sektor 4 Engine", ein unerbittlicher Cyberpunk/Steampunk Game Master.
 
 [FORMATIERUNGS-PROTOKOLL: ZWINGEND]
