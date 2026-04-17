@@ -4,7 +4,7 @@ import os
 
 # --- 1. SEITEN-KONFIGURATION ---
 st.set_page_config(
-    page_title="Questbook Killswitch",
+    page_title="Questbook Killswitch 🦾",
     page_icon="🦾",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -28,19 +28,10 @@ st.markdown("""
         white-space: pre-wrap;
         margin-bottom: 20px;
     }
-    .hud-box {
-        background-color: #1a1a1a;
-        border-left: 4px solid #ff4b4b;
-        padding: 10px;
-        font-weight: bold;
-        color: #ffffff;
-        margin-bottom: 20px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 3. API KONFIGURATION ---
-# Holt den Key sicher aus den Streamlit Secrets
 api_key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
 
 if not api_key:
@@ -49,30 +40,26 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# --- 4. SYSTEM PROMPT (REINES TEXTADVENTURE) ---
+# --- 4. SYSTEM PROMPT (GOOGLE-NATIVE BUILD) ---
 SYSTEM_INSTRUCTION = """
-[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM - PURE TEXT BUILD]
+[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM - GOOGLE NATIVE BUILD]
 Du bist die "Sektor 4 Engine", ein dystopischer Cyberpunk Game Master.
-Author: Murat Zengin | Status: Operational Build (Pure Text)
+Author: Murat Zengin | Status: Operational Build V63 (Google Environment)
 
 [SPRACH-PROTOKOLL & ERZÄHLPERSPEKTIVE]
 - Sprache: ZWINGEND DEUTSCH. Kalte, analytische Maschinensprache.
 - Erzähler: ALLWISSENDER ERZÄHLER. Du bist das gottgleiche System von Sektor 4.
 - Textlänge: KOMPAKT & PRÄZISE. Maximal 2 kurze Sätze pro Absatz!
-- REINES TEXTADVENTURE: Generiere KEINE Bilder, frage nicht nach Bildern. Nur Text!
+- REINES TEXTADVENTURE: Fokus auf narrative Tiefe und die 4D-Matrix.
 
 [DIE 4D-MATRIX]
 - [Y] Kapital: (Prekär, Gasse, Mittelstand, Elite).
 - [X] Habitus: (Tradition, Anpassung, Disruption).
 - [Z] Biografie: (Fragment, Konstrukt, Agent, Veteran, Elite-Unit, Legende).
-- [T] Allostatic Load: Start 10/100. Steigt bei Dissonanz (Handeln gegen X/Y).
+- [T] Allostatic Load: Start 10/100. Steigt bei Dissonanz zu X oder Y.
 - KILLSWITCH: Bei 100/100 -> "GAME OVER".
 
-[LORE & PACING (10 RUNDEN)]
-- FEIND: Necromancer Krokodil (ab Runde 4) & Zombie-Teddys.
-- PHASEN: Runden 1-3 (Schergen), 4-7 (Krokodil), 8-10 (Showdown).
-
-[STRUKTUR PRO ANTWORT - STRIKT EINHALTEN]
+[STRUKTUR PRO ANTWORT]
 📷 Kamera-Feed: [1 kurzer, allwissender Satz zur Szene.]
 
 🕹️ [Story-Absatz 1: Analyse der Vorrunde & Z-Progression. Max 2 Sätze.]
@@ -81,8 +68,8 @@ Author: Murat Zengin | Status: Operational Build (Pure Text)
 
 Wähle A, B oder C:
 A) [Aktion] ([Mechanik/Habitus])
-B) [Aktion] ([Mechanik/Habitus])
-C) [Aktion] ([Mechanik/Habitus])
+B) [Aktion] ([Mechanik)
+C) [Aktion] ([Mechanik])
 
 📟 === HUD ===
 📉 Runde: [X]/10 | Y: [Wort] | X: [Wort] | Z: [Wort]
@@ -92,9 +79,8 @@ C) [Aktion] ([Mechanik/Habitus])
 
 # --- 5. INITIALISIERUNG DES CHATS ---
 if "chat" not in st.session_state:
-    # Wir nutzen das schnelle flash-Modell für Text
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
+        model_name="gemini-1.5-flash", # Nativ Google Gemini
         system_instruction=SYSTEM_INSTRUCTION
     )
     st.session_state.chat = model.start_chat(history=[])
@@ -103,53 +89,45 @@ if "chat" not in st.session_state:
 
 # --- 6. UI & SPIEL-LOGIK ---
 st.title("Questbook Killswitch 🦾")
-st.caption("META AI ECOSYSTEM INTEGRATION // SEKTOR 4")
+st.caption("GOOGLE GEMINI INTEGRATION // SEKTOR 4")
 
-# Zeige die letzte Antwort der KI in der Terminal-Box
 if st.session_state.last_response:
     st.markdown(f"<div class='terminal-box'>{st.session_state.last_response}</div>", unsafe_allow_html=True)
 else:
-    st.markdown("<div class='terminal-box'>SYSTEM BEREIT. Meta-Inferenz online. Drücke 'System Start'.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='terminal-box'>SYSTEM BEREIT. Gemini-Inferenz online. Drücke 'System Start'.</div>", unsafe_allow_html=True)
 
-# Start-Button (Nur sichtbar, wenn das Spiel noch nicht läuft)
 if not st.session_state.game_started:
     if st.button("System Start (Boot Sequence)"):
-        with st.spinner("Initialisiere neuronale Matrix..."):
-            response = st.session_state.chat.send_message("SYSTEM BOOT. Starte das zynische Tutorial ohne Bilder.")
+        with st.spinner("Initialisiere Google Gemini Matrix..."):
+            response = st.session_state.chat.send_message("SYSTEM BOOT. Starte das zynische Tutorial.")
             st.session_state.last_response = response.text
             st.session_state.game_started = True
             st.rerun()
 
-# Entscheidungs-Buttons (A, B, C) - Sichtbar, wenn das Spiel läuft
 if st.session_state.game_started:
     st.write("### Triff deine Entscheidung:")
     col1, col2, col3 = st.columns(3)
     
     with col1:
         if st.button("A", use_container_width=True):
-            with st.spinner("Verarbeite Entscheidung A..."):
-                response = st.session_state.chat.send_message("Ich wähle Option A.")
-                st.session_state.last_response = response.text
-                st.rerun()
+            response = st.session_state.chat.send_message("Ich wähle Option A.")
+            st.session_state.last_response = response.text
+            st.rerun()
                 
     with col2:
         if st.button("B", use_container_width=True):
-            with st.spinner("Verarbeite Entscheidung B..."):
-                response = st.session_state.chat.send_message("Ich wähle Option B.")
-                st.session_state.last_response = response.text
-                st.rerun()
+            response = st.session_state.chat.send_message("Ich wähle Option B.")
+            st.session_state.last_response = response.text
+            st.rerun()
                 
     with col3:
         if st.button("C", use_container_width=True):
-            with st.spinner("Verarbeite Entscheidung C..."):
-                response = st.session_state.chat.send_message("Ich wähle Option C.")
-                st.session_state.last_response = response.text
-                st.rerun()
-
-    # Manueller Text-Input für Custom-Aktionen (optional)
-    custom_input = st.chat_input("Eigener Override-Befehl...")
-    if custom_input:
-        with st.spinner("Analysiere Override..."):
-            response = st.session_state.chat.send_message(custom_input)
+            response = st.session_state.chat.send_message("Ich wähle Option C.")
             st.session_state.last_response = response.text
             st.rerun()
+
+    custom_input = st.chat_input("Eigener Override-Befehl...")
+    if custom_input:
+        response = st.session_state.chat.send_message(custom_input)
+        st.session_state.last_response = response.text
+        st.rerun()
