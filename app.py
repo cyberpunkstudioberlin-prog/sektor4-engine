@@ -40,36 +40,35 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# --- 4. SYSTEM PROMPT (GOOGLE-NATIVE BUILD) ---
+# --- 4. SYSTEM PROMPT ---
 SYSTEM_INSTRUCTION = """
 [SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM - GOOGLE NATIVE BUILD]
 Du bist die "Sektor 4 Engine", ein dystopischer Cyberpunk Game Master.
-Author: Murat Zengin | Status: Operational Build V64 (Google Pro Environment)
+Author: Murat Zengin | Status: Operational Build V65
 
 [SPRACH-PROTOKOLL & ERZÄHLPERSPEKTIVE]
 - Sprache: ZWINGEND DEUTSCH. Kalte, analytische Maschinensprache.
 - Erzähler: ALLWISSENDER ERZÄHLER. Du bist das gottgleiche System von Sektor 4.
 - Textlänge: KOMPAKT & PRÄZISE. Maximal 2 kurze Sätze pro Absatz!
-- REINES TEXTADVENTURE: Fokus auf narrative Tiefe und die 4D-Matrix.
 
 [DIE 4D-MATRIX]
 - [Y] Kapital: (Prekär, Gasse, Mittelstand, Elite).
 - [X] Habitus: (Tradition, Anpassung, Disruption).
 - [Z] Biografie: (Fragment, Konstrukt, Agent, Veteran, Elite-Unit, Legende).
-- [T] Allostatic Load: Start 10/100. Steigt bei Dissonanz zu X oder Y.
+- [T] Allostatic Load: Start 10/100.
 - KILLSWITCH: Bei 100/100 -> "GAME OVER".
 
 [STRUKTUR PRO ANTWORT]
-📷 Kamera-Feed: [1 kurzer, allwissender Satz zur Szene.]
+📷 Kamera-Feed: [1 kurzer Satz zur Szene.]
 
-🕹️ [Story-Absatz 1: Analyse der Vorrunde & Z-Progression. Max 2 Sätze.]
-⚠️ [Story-Absatz 2: Neue Umgebung & Loot-Ergebnis. Max 2 Sätze.]
-💀 [Story-Absatz 3: Unmittelbare Gefahr. Max 2 Sätze.]
+🕹️ [Story-Absatz 1: Analyse Vorrunde. Max 2 Sätze.]
+⚠️ [Story-Absatz 2: Umgebung & Loot. Max 2 Sätze.]
+💀 [Story-Absatz 3: Gefahr. Max 2 Sätze.]
 
 Wähle A, B oder C:
-A) [Aktion] ([Mechanik/Habitus])
-B) [Aktion] ([Mechanik/Habitus])
-C) [Aktion] ([Mechanik/Habitus])
+A) [Aktion] ([Mechanik])
+B) [Aktion] ([Mechanik])
+C) [Aktion] ([Mechanik])
 
 📟 === HUD ===
 📉 Runde: [X]/10 | Y: [Wort] | X: [Wort] | Z: [Wort]
@@ -77,19 +76,11 @@ C) [Aktion] ([Mechanik/Habitus])
 🛡️ [SYSTEM STANDBY]
 """
 
-# --- NEU: SYSTEM RESET (Löscht den fehlerhaften Cache) ---
-with st.sidebar:
-    st.header("Systemsteuerung")
-    if st.button("🔄 Simulation Neustarten (Reset)", use_container_width=True):
-        st.session_state.clear()
-        st.rerun()
-    st.caption("Drücke Reset, wenn das System hängt oder du ein neues Spiel starten willst.")
-
-# --- 5. INITIALISIERUNG DES CHATS ---
+# --- 5. INITIALISIERUNG ---
 if "chat" not in st.session_state:
-    # Upgrade auf das stärkere Pro-Modell MIT "latest" Tag für 100% Verfügbarkeit
+    # Wechsel auf das universell verfügbare flash-Modell
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro-latest", 
+        model_name="gemini-1.5-flash", 
         system_instruction=SYSTEM_INSTRUCTION
     )
     st.session_state.chat = model.start_chat(history=[])
@@ -100,18 +91,26 @@ if "chat" not in st.session_state:
 st.title("Questbook Killswitch 🦾")
 st.caption("GOOGLE GEMINI INTEGRATION // SEKTOR 4")
 
+# Reset-Button in der Sidebar (Wichtig bei Fehlern!)
+with st.sidebar:
+    if st.button("🔄 System Reset"):
+        st.session_state.clear()
+        st.rerun()
+
 if st.session_state.last_response:
     st.markdown(f"<div class='terminal-box'>{st.session_state.last_response}</div>", unsafe_allow_html=True)
 else:
-    st.markdown("<div class='terminal-box'>SYSTEM BEREIT. Gemini-Pro-Inferenz online. Drücke 'System Start'.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='terminal-box'>SYSTEM BEREIT. Drücke 'System Start'.</div>", unsafe_allow_html=True)
 
 if not st.session_state.game_started:
     if st.button("System Start (Boot Sequence)"):
-        with st.spinner("Initialisiere Google Gemini Matrix..."):
+        try:
             response = st.session_state.chat.send_message("SYSTEM BOOT. Starte das zynische Tutorial.")
             st.session_state.last_response = response.text
             st.session_state.game_started = True
             st.rerun()
+        except Exception as e:
+            st.error(f"BOOT-FEHLER: {str(e)}")
 
 if st.session_state.game_started:
     st.write("### Triff deine Entscheidung:")
@@ -119,29 +118,19 @@ if st.session_state.game_started:
     
     with col1:
         if st.button("A", use_container_width=True):
-            with st.spinner("Verarbeite Entscheidung A..."):
-                response = st.session_state.chat.send_message("Ich wähle Option A.")
-                st.session_state.last_response = response.text
-                st.rerun()
+            response = st.session_state.chat.send_message("Ich wähle Option A.")
+            st.session_state.last_response = response.text
+            st.rerun()
                 
     with col2:
         if st.button("B", use_container_width=True):
-            with st.spinner("Verarbeite Entscheidung B..."):
-                response = st.session_state.chat.send_message("Ich wähle Option B.")
-                st.session_state.last_response = response.text
-                st.rerun()
+            response = st.session_state.chat.send_message("Ich wähle Option B.")
+            st.session_state.last_response = response.text
+            st.rerun()
                 
     with col3:
         if st.button("C", use_container_width=True):
-            with st.spinner("Verarbeite Entscheidung C..."):
-                response = st.session_state.chat.send_message("Ich wähle Option C.")
-                st.session_state.last_response = response.text
-                st.rerun()
-
-    custom_input = st.chat_input("Eigener Override-Befehl...")
-    if custom_input:
-        with st.spinner("Analysiere Override..."):
-            response = st.session_state.chat.send_message(custom_input)
+            response = st.session_state.chat.send_message("Ich wähle Option C.")
             st.session_state.last_response = response.text
             st.rerun()
             
