@@ -44,7 +44,7 @@ genai.configure(api_key=api_key)
 SYSTEM_INSTRUCTION = """
 [SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM - GOOGLE NATIVE BUILD]
 Du bist die "Sektor 4 Engine", ein dystopischer Cyberpunk Game Master.
-Author: Murat Zengin | Status: Operational Build V63 (Google Environment)
+Author: Murat Zengin | Status: Operational Build V64 (Google Pro Environment)
 
 [SPRACH-PROTOKOLL & ERZÄHLPERSPEKTIVE]
 - Sprache: ZWINGEND DEUTSCH. Kalte, analytische Maschinensprache.
@@ -68,8 +68,8 @@ Author: Murat Zengin | Status: Operational Build V63 (Google Environment)
 
 Wähle A, B oder C:
 A) [Aktion] ([Mechanik/Habitus])
-B) [Aktion] ([Mechanik)
-C) [Aktion] ([Mechanik])
+B) [Aktion] ([Mechanik/Habitus])
+C) [Aktion] ([Mechanik/Habitus])
 
 📟 === HUD ===
 📉 Runde: [X]/10 | Y: [Wort] | X: [Wort] | Z: [Wort]
@@ -79,8 +79,9 @@ C) [Aktion] ([Mechanik])
 
 # --- 5. INITIALISIERUNG DES CHATS ---
 if "chat" not in st.session_state:
+    # Upgrade auf das stärkere Pro-Modell
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash", # Nativ Google Gemini
+        model_name="gemini-1.5-pro", 
         system_instruction=SYSTEM_INSTRUCTION
     )
     st.session_state.chat = model.start_chat(history=[])
@@ -94,7 +95,7 @@ st.caption("GOOGLE GEMINI INTEGRATION // SEKTOR 4")
 if st.session_state.last_response:
     st.markdown(f"<div class='terminal-box'>{st.session_state.last_response}</div>", unsafe_allow_html=True)
 else:
-    st.markdown("<div class='terminal-box'>SYSTEM BEREIT. Gemini-Inferenz online. Drücke 'System Start'.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='terminal-box'>SYSTEM BEREIT. Gemini-Pro-Inferenz online. Drücke 'System Start'.</div>", unsafe_allow_html=True)
 
 if not st.session_state.game_started:
     if st.button("System Start (Boot Sequence)"):
@@ -110,24 +111,28 @@ if st.session_state.game_started:
     
     with col1:
         if st.button("A", use_container_width=True):
-            response = st.session_state.chat.send_message("Ich wähle Option A.")
-            st.session_state.last_response = response.text
-            st.rerun()
+            with st.spinner("Verarbeite Entscheidung A..."):
+                response = st.session_state.chat.send_message("Ich wähle Option A.")
+                st.session_state.last_response = response.text
+                st.rerun()
                 
     with col2:
         if st.button("B", use_container_width=True):
-            response = st.session_state.chat.send_message("Ich wähle Option B.")
-            st.session_state.last_response = response.text
-            st.rerun()
+            with st.spinner("Verarbeite Entscheidung B..."):
+                response = st.session_state.chat.send_message("Ich wähle Option B.")
+                st.session_state.last_response = response.text
+                st.rerun()
                 
     with col3:
         if st.button("C", use_container_width=True):
-            response = st.session_state.chat.send_message("Ich wähle Option C.")
-            st.session_state.last_response = response.text
-            st.rerun()
+            with st.spinner("Verarbeite Entscheidung C..."):
+                response = st.session_state.chat.send_message("Ich wähle Option C.")
+                st.session_state.last_response = response.text
+                st.rerun()
 
     custom_input = st.chat_input("Eigener Override-Befehl...")
     if custom_input:
-        response = st.session_state.chat.send_message(custom_input)
-        st.session_state.last_response = response.text
-        st.rerun()
+        with st.spinner("Analysiere Override..."):
+            response = st.session_state.chat.send_message(custom_input)
+            st.session_state.last_response = response.text
+            st.rerun()
