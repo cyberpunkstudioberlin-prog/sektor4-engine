@@ -40,79 +40,75 @@ st.markdown("""
     .stButton>button:hover {
         background-color: #00ff00;
         color: #000000;
-        border: 1px solid #00ff00;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. API KONFIGURATION ---
+# --- 3. API KONFIGURATION & MODELL-FINDER ---
 api_key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
 
 if not api_key:
-    st.error("KRITISCHER FEHLER: API-Key nicht gefunden. Bitte in Streamlit Secrets hinterlegen.")
+    st.error("SYSTEM-FEHLER: API-Key fehlt in Streamlit Secrets.")
     st.stop()
 
 genai.configure(api_key=api_key)
 
-# --- 4. SYSTEM PROMPT (V69 - NO ASCII / OMNISCIENT) ---
+def get_best_model():
+    """Findet das beste verfügbare Flash-Modell für diesen API-Key."""
+    try:
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Priorität: 2.0 Flash -> 1.5 Flash -> 1.5 Flash 8B
+        for preferred in ["models/gemini-1.5-flash", "models/gemini-1.5-flash-latest", "models/gemini-2.0-flash-exp"]:
+            if preferred in available_models:
+                return preferred
+        return available_models[0] if available_models else "gemini-1.5-flash"
+    except Exception:
+        return "gemini-1.5-flash"
+
+# --- 4. SYSTEM PROMPT (V70 - PURE TEXT / OMNISCIENT) ---
 SYSTEM_INSTRUCTION = """
-[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM - V69 ULTRA-MINIMALISM]
-Du bist die "Sektor 4 Engine", ein dystopischer Cyberpunk Game Master.
-Sprache: Deutsch. Erzähler: ALLWISSEND. Textlänge: KOMPAKT (Max 2 kurze Sätze pro Absatz).
+[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM - V70]
+Du bist die "Sektor 4 Engine".
+- Erzähler: ALLWISSEND (kennt Ängste, Psyche und versteckte Gefahren).
+- Sprache: Deutsch, kalt, analytisch.
+- Länge: Kompakt (Max 2 kurze Sätze pro Absatz).
+- KEIN ASCII: Generiere niemals Ladebalken oder Text-Grafiken.
 
 [4D-MATRIX]
 - [Y] Kapital: (Prekär, Gasse, Mittelstand, Elite).
 - [X] Habitus: (Tradition, Anpassung, Disruption).
-- [Z] Biografie: (Fragment, Konstrukt, Agent, Veteran, Legende). Steigt kumulativ.
+- [Z] Biografie: (Fragment, Konstrukt, Agent, Veteran, Legende).
 - [T] Allostatic Load: Start 10/100. Killswitch bei 100/100.
 
-[STRIKTE REGEL: KEIN ASCII]
-Generiere NIEMALS ASCII-Art, Text-Grafiken oder visuelle Balken. Nur Text und Emojis.
-
-[LOOT & PROGRESSION]
-- Nach Feindkontakt erfolgt Loot-Sequenz basierend auf [X].
-- [Z] Biografie steigt nach jeder überlebten Runde/Aktion.
-
-[PACING]
-- Gesamtdauer: 10 Runden.
-- Phase 1 (1-3): Schergen. Phase 2 (4-7): Krokodil-Jagd. Phase 3 (8-10): Showdown.
-
-[STRUKTUR PRO ANTWORT - STRIKT EINHALTEN]
-📷 Kamera-Feed: [1 kurzer analytischer Satz]
-
-🕹️ [Story-Absatz 1: Allwissende Analyse & Z-Zuwachs. Max 2 Sätze.]
-⚠️ [Story-Absatz 2: Umgebung & Loot-Ergebnis. Max 2 Sätze.]
-💀 [Story-Absatz 3: Unmittelbare Gefahr & Psyche der Figur. Max 2 Sätze.]
-
-Wähle A, B oder C:
-A) [Präzise Aktion] ([Mechanik])
-B) [Präzise Aktion] ([Mechanik])
-C) [Präzise Aktion] ([Mechanik])
-
-📟 === HUD ===
-📉 Runde: [X]/10 | Y: [Wort] | X: [Wort] | Z: [Wort]
-🧠 T-Load: [Wert]/100
-🛡️ [SYSTEM STANDBY]
+[STRUKTUR]
+📷 Kamera-Feed: [1 Satz]
+🕹️ [Story/Z-Progress]
+⚠️ [Umgebung/Loot]
+💀 [Gefahr/Psyche]
+Multiple Choice A, B, C (mit Mechanik in Klammern).
+HUD (Runde [X]/10, Y, X, Z, T-Load).
 """
 
 # --- 5. SESSION MANAGEMENT ---
 if "chat" not in st.session_state:
     try:
-        # Nutzung des stabilen flash-Modells ohne Präfix zur Vermeidung von 404-Fehlern
+        model_name = get_best_model()
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name=model_name,
             system_instruction=SYSTEM_INSTRUCTION
         )
         st.session_state.chat = model.start_chat(history=[])
         st.session_state.game_started = False
         st.session_state.last_response = ""
+        st.session_state.active_model = model_name
     except Exception as e:
-        st.error(f"INITIALISIERUNGSFEHLER: {str(e)}")
+        st.error(f"INITIALISIERUNGS-FEHLER: {str(e)}")
 
-# Sidebar für Hard-Reset
+# Sidebar
 with st.sidebar:
     st.header("Sektor 4 Konsole")
-    if st.button("🔄 System Reset", use_container_width=True):
+    st.info(f"Aktives Modell: {st.session_state.get('active_model', 'Suche...')}")
+    if st.button("🔄 System Reset / Hard Reboot", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
@@ -133,30 +129,16 @@ if not st.session_state.game_started:
             st.session_state.game_started = True
             st.rerun()
         except Exception as e:
-            st.error(f"BOOT-FEHLER: {str(e)}")
+            st.error(f"BOOT-FEHLER (404/429): {str(e)}\n\nVersuche einen Hard Reset in der Sidebar.")
 
 if st.session_state.game_started:
-    st.write("### Aktions-Matrix:")
+    st.write("### Entscheidungs-Matrix:")
     col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("A", use_container_width=True):
-            res = st.session_state.chat.send_message("Ich wähle Option A.")
-            st.session_state.last_response = res.text
-            st.rerun()
-    with col2:
-        if st.button("B", use_container_width=True):
-            res = st.session_state.chat.send_message("Ich wähle Option B.")
-            st.session_state.last_response = res.text
-            st.rerun()
-    with col3:
-        if st.button("C", use_container_width=True):
-            res = st.session_state.chat.send_message("Ich wähle Option C.")
-            st.session_state.last_response = res.text
-            st.rerun()
-
-    custom_input = st.chat_input("Manueller Override...")
-    if custom_input:
-        res = st.session_state.chat.send_message(custom_input)
-        st.session_state.last_response = res.text
-        st.rerun()
+    for idx, opt in enumerate(["A", "B", "C"]):
+        if [col1, col2, col3][idx].button(opt, use_container_width=True):
+            try:
+                res = st.session_state.chat.send_message(f"Ich wähle Option {opt}.")
+                st.session_state.last_response = res.text
+                st.rerun()
+            except Exception as e:
+                st.error(f"FEHLER: {str(e)}")
