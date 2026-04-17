@@ -77,11 +77,19 @@ C) [Aktion] ([Mechanik/Habitus])
 🛡️ [SYSTEM STANDBY]
 """
 
+# --- NEU: SYSTEM RESET (Löscht den fehlerhaften Cache) ---
+with st.sidebar:
+    st.header("Systemsteuerung")
+    if st.button("🔄 Simulation Neustarten (Reset)", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
+    st.caption("Drücke Reset, wenn das System hängt oder du ein neues Spiel starten willst.")
+
 # --- 5. INITIALISIERUNG DES CHATS ---
 if "chat" not in st.session_state:
-    # Upgrade auf das stärkere Pro-Modell
+    # Upgrade auf das stärkere Pro-Modell MIT "latest" Tag für 100% Verfügbarkeit
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro", 
+        model_name="gemini-1.5-pro-latest", 
         system_instruction=SYSTEM_INSTRUCTION
     )
     st.session_state.chat = model.start_chat(history=[])
@@ -136,3 +144,4 @@ if st.session_state.game_started:
             response = st.session_state.chat.send_message(custom_input)
             st.session_state.last_response = response.text
             st.rerun()
+            
