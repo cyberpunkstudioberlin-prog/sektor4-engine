@@ -1,12 +1,15 @@
-# sektor4-engine
-Sektor 4 Engine // V29.0 🦾
-Diese Version behebt kritische Session-State Fehler und nutzt das neueste multimodale Gemini 2.5 Flash Modell.
-Fixes
-ModuleNotFoundError: Korrigiert durch Aktualisierung der requirements.txt.
-width="stretch": Behebt die Veraltungswarnungen für use_container_width.
-Engine-Stabilität: Sicherstellung von validem JSON-Output für das Narrativ.
-Setup
-Repo auf GitHub aktualisieren.
-API-Key unter Settings -> Secrets in Streamlit Cloud als GOOGLE_API_KEY hinterlegen.
-App neu starten.
-Autor: Murat Zengin
+# Sektor 4 Engine // V30.0 (GitHub Optimized) 🦾
+Diese Web-App wurde für maximale Stabilität auf Streamlit Cloud entwickelt.
+## Fixes in dieser Version:
+ * **ModuleNotFoundError behoben:** Die requirements.txt ist nun exakt auf die Streamlit-Umgebung abgestimmt.
+ * **st.status Integration:** Bessere Rückmeldung während die KI-Engine Daten verarbeitet, um "Einfrieren" zu vermeiden.
+ * **Modernste API:** Nutzt das stabile multimodale Gemini 2.5 Flash Modell für Text und Bildanalyse.
+ * **UX-Optimierung:** Behebt die Warnungen bezüglich use_container_width und width.
+## Deployment
+ 1. Lade app.py, requirements.txt und README.md in dein Repository hoch.
+ 2. In den Streamlit Cloud Einstellungen unter **Secrets** deinen API-Key hinterlegen:
+   ```toml
+   GOOGLE_API_KEY = "DEIN_KEY_VON_GOOGLE_AI_STUDIO"
+   
+   ```
+**Entwickelt von Murat Zengin**
