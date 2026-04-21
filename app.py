@@ -1,6 +1,8 @@
 import streamlit as st
 import google.generativeai as genai
-import os
+import json
+from PIL import Image
+import io
 
 # --- 1. SEITEN-KONFIGURATION ---
 st.set_page_config(
@@ -19,126 +21,129 @@ st.markdown("""
         font-family: 'Courier New', Courier, monospace;
     }
     .terminal-box {
-        background-color: #000000;
-        border: 1px solid #333333;
+        border: 1px solid #10b981;
         padding: 20px;
+        background: rgba(0, 255, 0, 0.05);
         border-radius: 5px;
-        color: #00ff00;
-        font-family: 'Courier New', Courier, monospace;
-        white-space: pre-wrap;
         margin-bottom: 20px;
-        line-height: 1.5;
     }
+    .kater-log {
+        border-left: 3px solid #059669;
+        padding-left: 15px;
+        font-style: italic;
+        color: #10b981;
+        margin: 15px 0;
+    }
+    .hud-label { color: #065f46; font-size: 0.7rem; text-transform: uppercase; }
+    .hud-value { font-weight: bold; color: #10b981; }
     .stButton>button {
-        background-color: #1a1a1a;
+        width: 100%;
+        background-color: rgba(0, 255, 0, 0.1);
         color: #00ff00;
-        border: 1px solid #00ff00;
-        border-radius: 0px;
-        height: 3em;
-        font-weight: bold;
+        border: 1px solid #065f46;
+        text-align: left;
+        padding: 15px;
     }
     .stButton>button:hover {
         background-color: #00ff00;
-        color: #000000;
+        color: #000;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. API KONFIGURATION & MODELL-FINDER ---
-api_key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
+# --- 3. API INITIALISIERUNG ---
+API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
+genai.configure(api_key=API_KEY)
 
-if not api_key:
-    st.error("SYSTEM-FEHLER: API-Key fehlt in Streamlit Secrets.")
-    st.stop()
+SYSTEM_INSTRUCTION = """Du bist die Sektor 4 Engine [V28.5]. 
+STRIKTE REGELN: 
+1. Kein Smalltalk. 
+2. Narrativ: 3-4 Sätze, pure Geschichte. Nutze Trenn-Icons (🧬, 🕹️, ⚙️, 🐈).
+3. Wenn ein Bild hochgeladen wurde, integriere dessen Inhalt zynisch in die Story.
+Format: JSON { "kameraFeed": str, "narrativ": str, "katerLog": str, "optionen": [{"id": "A", "titel": str, "desc": str, "stress": str, "loot": str}] }"""
 
-genai.configure(api_key=api_key)
+model = genai.GenerativeModel(
+    model_name="gemini-2.5-flash-preview-09-2025",
+    system_instruction=SYSTEM_INSTRUCTION
+)
 
-def get_best_model():
-    """Findet das beste verfügbare Flash-Modell für diesen API-Key."""
+# --- 4. SESSION STATE ---
+if 'round' not in st.session_state:
+    st.session_state.round = 0
+    st.session_state.t_load = 10
+    st.session_state.loot = 0
+    st.session_state.kapital = "Defining..."
+    st.session_state.habitus = "Defining..."
+    st.session_state.current_data = None
+
+# --- 5. LOGIK-FUNKTIONEN ---
+def generate_turn(prompt, image=None):
     try:
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Priorität: 2.0 Flash -> 1.5 Flash -> 1.5 Flash 8B
-        for preferred in ["models/gemini-1.5-flash", "models/gemini-1.5-flash-latest", "models/gemini-2.0-flash-exp"]:
-            if preferred in available_models:
-                return preferred
-        return available_models[0] if available_models else "gemini-1.5-flash"
-    except Exception:
-        return "gemini-1.5-flash"
-
-# --- 4. SYSTEM PROMPT (V70 - PURE TEXT / OMNISCIENT) ---
-SYSTEM_INSTRUCTION = """
-[SYSTEM OVERRIDE: QUESTBOOK KILLSWITCH GM - V70]
-Du bist die "Sektor 4 Engine".
-- Erzähler: ALLWISSEND (kennt Ängste, Psyche und versteckte Gefahren).
-- Sprache: Deutsch, kalt, analytisch.
-- Länge: Kompakt (Max 2 kurze Sätze pro Absatz).
-- KEIN ASCII: Generiere niemals Ladebalken oder Text-Grafiken.
-
-[4D-MATRIX]
-- [Y] Kapital: (Prekär, Gasse, Mittelstand, Elite).
-- [X] Habitus: (Tradition, Anpassung, Disruption).
-- [Z] Biografie: (Fragment, Konstrukt, Agent, Veteran, Legende).
-- [T] Allostatic Load: Start 10/100. Killswitch bei 100/100.
-
-[STRUKTUR]
-📷 Kamera-Feed: [1 Satz]
-🕹️ [Story/Z-Progress]
-⚠️ [Umgebung/Loot]
-💀 [Gefahr/Psyche]
-Multiple Choice A, B, C (mit Mechanik in Klammern).
-HUD (Runde [X]/10, Y, X, Z, T-Load).
-"""
-
-# --- 5. SESSION MANAGEMENT ---
-if "chat" not in st.session_state:
-    try:
-        model_name = get_best_model()
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=SYSTEM_INSTRUCTION
-        )
-        st.session_state.chat = model.start_chat(history=[])
-        st.session_state.game_started = False
-        st.session_state.last_response = ""
-        st.session_state.active_model = model_name
+        content = [prompt]
+        if image:
+            content.append(image)
+        
+        response = model.generate_content(content, generation_config={"response_mime_type": "application/json"})
+        st.session_state.current_data = json.loads(response.text)
     except Exception as e:
-        st.error(f"INITIALISIERUNGS-FEHLER: {str(e)}")
+        st.error(f"Engine-Fehler: {e}")
 
-# Sidebar
+def handle_choice(choice_idx):
+    choice = st.session_state.current_data['optionen'][choice_idx]
+    st.session_state.t_load = min(100, st.session_state.t_load + (20 if choice['id'] == "D" else 5))
+    if choice['id'] == "D":
+        st.session_state.loot += 1
+        if st.session_state.loot >= 3:
+            st.session_state.loot = 0
+            ranks = ["Prekär", "Gasse", "Terminal-Access", "Elite"]
+            curr = ranks.index(st.session_state.kapital) if st.session_state.kapital in ranks else 0
+            st.session_state.kapital = ranks[min(len(ranks)-1, curr + 1)]
+    
+    if st.session_state.round == 0:
+        mapping = {"A": ("Anpassung", "Prekär"), "B": ("Disruption", "Terminal-Access"), "C": ("Tradition", "Gasse")}
+        st.session_state.habitus, st.session_state.kapital = mapping.get(choice['id'], ("Anpassung", "Prekär"))
+
+    st.session_state.round += 1
+    generate_turn(f"Runde {st.session_state.round}. Letzte Wahl: {choice['titel']}. Stress: {st.session_state.t_load}")
+
+# --- 6. UI ---
+st.title("SEKTOR 4 ENGINE // V28.5")
+
+# IMAGE UPLOADER SIDEBAR
 with st.sidebar:
-    st.header("Sektor 4 Konsole")
-    st.info(f"Aktives Modell: {st.session_state.get('active_model', 'Suche...')}")
-    if st.button("🔄 System Reset / Hard Reboot", use_container_width=True):
-        st.session_state.clear()
+    st.header("⚙️ Scanner-Modul")
+    uploaded_file = st.file_uploader("Bild zur Analyse hochladen...", type=["jpg", "jpeg", "png"])
+    if uploaded_file:
+        img = Image.open(uploaded_file)
+        st.image(img, caption="Analysiere Scan...", use_container_width=True)
+
+# START / GAMEPLAY
+if st.session_state.round == 0 and st.session_state.current_data is None:
+    if st.button("INITIALISIERE SYSTEM (START)"):
+        img_input = Image.open(uploaded_file) if uploaded_file else None
+        generate_turn("START: Initialisierung. Analysiere Herkunft.", img_input)
         st.rerun()
 
-# --- 6. UI & SPIEL-LOGIK ---
-st.title("Questbook Killswitch 🦾")
-st.caption("GOOGLE GEMINI NATIVE // SEKTOR 4 ENGINE")
-
-if st.session_state.last_response:
-    st.markdown(f"<div class='terminal-box'>{st.session_state.last_response}</div>", unsafe_allow_html=True)
-else:
-    st.markdown("<div class='terminal-box'>SYSTEM BEREIT. Google-Inferenz online.\n\nDrücke 'System Start'.</div>", unsafe_allow_html=True)
-
-if not st.session_state.game_started:
-    if st.button("System Start (Boot Sequence)", use_container_width=True):
-        try:
-            response = st.session_state.chat.send_message("SYSTEM BOOT. Starte das zynische Tutorial.")
-            st.session_state.last_response = response.text
-            st.session_state.game_started = True
+if st.session_state.current_data:
+    data = st.session_state.current_data
+    st.caption(f"📷 {data['kameraFeed']}")
+    st.markdown(f"""<div class="terminal-box">{data['narrativ']}<div class="kater-log"><strong>🐈 Kater-Log:</strong><br>„{data['katerLog']}“</div></div>""", unsafe_allow_html=True)
+    
+    for i, opt in enumerate(data['optionen']):
+        if st.button(f"**{opt['id']}) {opt['titel']}**\n\n{opt['desc']}\n\n[Stress: {opt['stress']} | Loot: {opt['loot']}]", key=f"btn_{i}"):
+            handle_choice(i)
             st.rerun()
-        except Exception as e:
-            st.error(f"BOOT-FEHLER (404/429): {str(e)}\n\nVersuche einen Hard Reset in der Sidebar.")
 
-if st.session_state.game_started:
-    st.write("### Entscheidungs-Matrix:")
-    col1, col2, col3 = st.columns(3)
-    for idx, opt in enumerate(["A", "B", "C"]):
-        if [col1, col2, col3][idx].button(opt, use_container_width=True):
-            try:
-                res = st.session_state.chat.send_message(f"Ich wähle Option {opt}.")
-                st.session_state.last_response = res.text
-                st.rerun()
-            except Exception as e:
-                st.error(f"FEHLER: {str(e)}")
+# HUD
+st.markdown("---")
+cols = st.columns(4)
+stats = [("Habitus", st.session_state.habitus), ("Kapital", st.session_state.kapital), ("Loot", f"{st.session_state.loot}/3"), ("Runde", f"{st.session_state.round}/10")]
+for col, (label, val) in zip(cols, stats):
+    col.markdown(f"<span class='hud-label'>{label}</span><br><span class='hud-value'>{val}</span>", unsafe_allow_html=True)
+
+st.write(f"🧠 T-LOAD: {st.session_state.t_load}%")
+st.progress(st.session_state.t_load / 100)
+
+if st.button("System Reset"):
+    st.session_state.clear()
+    st.rerun()
