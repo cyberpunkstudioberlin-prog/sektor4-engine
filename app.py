@@ -100,11 +100,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. API INITIALISIERUNG ---
-# WICHTIG: Key in Streamlit Secrets unter "GOOGLE_API_KEY" speichern
+# API Key aus Streamlit Secrets (Settings -> Secrets auf streamlit.app)
 API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
 
 if not API_KEY:
-    st.error("⚠️ API-KEY NICHT GEFUNDEN! Bitte 'GOOGLE_API_KEY' in den Streamlit Cloud Secrets (Settings) hinterlegen.")
+    st.error("⚠️ API-KEY NICHT GEFUNDEN! Bitte 'GOOGLE_API_KEY' in den Streamlit Secrets hinterlegen.")
     st.stop()
 
 genai.configure(api_key=API_KEY)
@@ -122,6 +122,7 @@ Formatierung: Gib NUR valides JSON zurück.
 Schema: { "kameraFeed": string, "narrativ": string, "katerLog": string, "visualPrompt": string, "optionen": [{ "id": "A"|"B"|"C"|"D", "titel": string, "beschreibung": string, "stress": string, "loot": string }] }"""
 
 # --- 4. SESSION STATE MANAGEMENT ---
+# Wir nutzen Session State, um den Spielfortschritt über Klicks hinweg zu speichern
 if 'round' not in st.session_state:
     st.session_state.update({
         'round': 0,
@@ -130,13 +131,16 @@ if 'round' not in st.session_state:
         'kapital': "Defining...",
         'habitus': "Defining...",
         'current_turn': None,
-        'current_image': None
+        'current_image': None,
+        'is_loading': False
     })
 
 # --- 5. CORE LOGIC ---
 def run_engine(prompt, uploaded_image=None):
+    """Zentraler Aufruf der KI-Engine für Text und Bild."""
+    st.session_state.is_loading = True
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash-preview-09-2025", # Das von dir gewählte Modell
+        model_name="gemini-2.5-flash-preview-09-2025",
         system_instruction=SYSTEM_PROMPT
     )
     
@@ -146,27 +150,34 @@ def run_engine(prompt, uploaded_image=None):
     
     try:
         # 1. Narrativ & Spiel-Logik generieren
-        response = model.generate_content(contents, generation_config={"response_mime_type": "application/json"})
-        data = json.loads(response.text)
-        st.session_state.current_turn = data
-        
-        # 2. Visualisierung generieren (Imagen)
-        try:
-            img_model = genai.get_model("models/imagen-4.0-generate-001")
-            img_resp = img_model.predict(
-                instances={"prompt": f"9:16 portrait. Cinematic cyberpunk. {data['visualPrompt']}. Neon cyan and copper, industrial grit."},
-                parameters={"sampleCount": 1}
-            )
-            st.session_state.current_image = img_resp.predictions[0].bytesBase64Encoded
-        except:
-            st.session_state.current_image = None
+        with st.status("📡 Synchronisiere Sektor-Daten...", expanded=True) as status:
+            response = model.generate_content(contents, generation_config={"response_mime_type": "application/json"})
+            data = json.loads(response.text)
+            st.session_state.current_turn = data
+            status.update(label="✅ Daten empfangen. Generiere Visualisierung...", state="running")
+            
+            # 2. Visualisierung generieren (Imagen)
+            try:
+                img_model = genai.get_model("models/imagen-4.0-generate-001")
+                img_prompt = f"9:16 portrait mobile aspect ratio. Cinematic cyberpunk steampunk Berlin. {data['visualPrompt']}. Neon cyan and copper, industrial grit."
+                img_resp = img_model.predict(
+                    instances={"prompt": img_prompt},
+                    parameters={"sampleCount": 1}
+                )
+                st.session_state.current_image = img_resp.predictions[0].bytesBase64Encoded
+            except Exception:
+                st.session_state.current_image = None
+            
+            status.update(label="✅ Simulation bereit.", state="complete")
+            
     except Exception as e:
-        st.error(f"Engine-Error: {e}")
+        st.error(f"❌ Engine-Kollaps: {e}")
+    finally:
+        st.session_state.is_loading = False
 
-def handle_choice(idx):
-    choice = st.session_state.current_turn['optionen'][idx]
-    
-    # Stress (T-Load)
+def handle_choice(choice):
+    """Verarbeitet die Spielerwahl und aktualisiert die Stats."""
+    # Stress-Zunahme (T-Load)
     stress_gain = 20 if choice['id'] == 'D' else 5
     st.session_state.t_load = min(100, st.session_state.t_load + stress_gain)
     
@@ -179,7 +190,7 @@ def handle_choice(idx):
             current_idx = ranks.index(st.session_state.kapital) if st.session_state.kapital in ranks else 0
             st.session_state.kapital = ranks[min(len(ranks)-1, current_idx + 1)]
             
-    # Initial-Habitus in Runde 0
+    # Initial-Habitus in Runde 0 setzen
     if st.session_state.round == 0:
         h_map = {"A": "Anpassung", "B": "Disruption", "C": "Tradition"}
         k_map = {"A": "Prekär", "B": "Terminal-Access", "C": "Gasse"}
@@ -188,7 +199,7 @@ def handle_choice(idx):
 
     st.session_state.round += 1
     
-    # Nächsten Turn laden
+    # Nächsten Spielzug anfordern
     next_prompt = f"Runde: {st.session_state.round}. Letzte Aktion: {choice['titel']}. Status: Stress {st.session_state.t_load}%, Kapital {st.session_state.kapital}. Phase: {'Jagd' if st.session_state.round < 5 else 'Eskalation'}."
     run_engine(next_prompt)
 
@@ -198,9 +209,9 @@ st.title("SEKTOR 4 ENGINE // V30.0")
 # SIDEBAR: SCANNER
 with st.sidebar:
     st.header("⚙️ Scanner-Modul")
-    uploaded_file = st.file_uploader("Bild zur Analyse hochladen...", type=["jpg", "png", "jpeg"])
+    uploaded_file = st.file_uploader("Artefakt zur Analyse hochladen...", type=["jpg", "png", "jpeg"])
     if uploaded_file:
-        st.image(Image.open(uploaded_file), caption="Analysiere Scan...", width=None)
+        st.image(Image.open(uploaded_file), caption="Analysiere Scan...", width="stretch")
 
 # START-LOGIK
 if st.session_state.round == 0 and st.session_state.current_turn is None:
@@ -232,11 +243,12 @@ if st.session_state.current_turn:
     """, unsafe_allow_html=True)
     
     # 4. Entscheidungs-Buttons
-    for i, opt in enumerate(turn['optionen']):
-        btn_text = f"**{opt['id']}) {opt['titel']}**\n\n{opt['beschreibung']}\n\n[Stress: {opt['stress']} | Loot: {opt['loot']}]"
-        if st.button(btn_text, key=f"choice_{i}", use_container_width=True):
-            handle_choice(i)
-            st.rerun()
+    if not st.session_state.is_loading:
+        for i, opt in enumerate(turn['optionen']):
+            btn_text = f"**{opt['id']}) {opt['titel']}**\n\n{opt['beschreibung']}\n\n[Stress: {opt['stress']} | Loot: {opt['loot']}]"
+            if st.button(btn_text, key=f"choice_{i}", use_container_width=True):
+                handle_choice(opt)
+                st.rerun()
 
 # --- 7. HUD (FOOTER) ---
 st.markdown("---")
