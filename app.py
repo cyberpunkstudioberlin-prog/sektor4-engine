@@ -7,94 +7,85 @@ import base64
 
 # --- 1. SEITEN-KONFIGURATION ---
 st.set_page_config(
-    page_title="Questbook Killswitch 🦾",
+    page_title="Questbook Killswitch // Sektor 4",
     page_icon="🦾",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CUSTOM CSS (TERMINAL STYLE V28.5) ---
+# --- 2. CUSTOM CSS (STABILISIERTER TERMINAL-LOOK) ---
 st.markdown("""
 <style>
     .stApp {
-        background-color: #0e1117;
-        color: #00ff00;
+        background-color: #0a0c10;
+        color: #00ff41;
         font-family: 'Courier New', Courier, monospace;
     }
-    .terminal-box {
+    .terminal-container {
         border: 1px solid #10b981;
         padding: 20px;
-        background: rgba(0, 255, 0, 0.05);
+        background: rgba(0, 255, 65, 0.03);
         border-radius: 4px;
         margin-bottom: 20px;
-        box-shadow: inset 0 0 20px rgba(0, 255, 0, 0.05);
+        box-shadow: inset 0 0 15px rgba(0, 255, 65, 0.05);
     }
     .kater-log {
         border-left: 3px solid #059669;
         padding-left: 15px;
         font-style: italic;
         color: #10b981;
-        margin: 15px 0;
+        margin-top: 15px;
         font-size: 0.9rem;
     }
-    .hud-label {
-        color: #065f46;
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
+    .hud-box {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid #065f46;
+        padding: 10px;
+        text-align: center;
+        border-radius: 4px;
     }
-    .hud-value {
-        font-weight: bold;
-        color: #10b981;
-        font-size: 1rem;
-    }
-    /* Button Styling */
+    .hud-label { color: #065f46; font-size: 0.65rem; text-transform: uppercase; }
+    .hud-value { font-weight: bold; color: #00ff41; font-size: 0.9rem; }
+    
+    /* Buttons */
     .stButton>button {
         width: 100%;
-        background-color: rgba(0, 255, 0, 0.1);
-        color: #00ff00;
+        background-color: rgba(0, 255, 65, 0.05);
+        color: #00ff41;
         border: 1px solid #065f46;
         text-align: left;
         padding: 15px;
-        transition: 0.3s;
         border-radius: 2px;
     }
     .stButton>button:hover {
-        background-color: #00ff00;
+        background-color: #00ff41;
         color: #000;
-        border-color: #00ff00;
-        box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
-    }
-    /* Scanlines */
-    .stApp::before {
-        content: " ";
-        display: block;
-        position: fixed;
-        top: 0; left: 0; bottom: 0; right: 0;
-        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
-        z-index: 9999;
-        background-size: 100% 4px, 3px 100%;
-        pointer-events: none;
-        opacity: 0.3;
+        border-color: #00ff41;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. API INITIALISIERUNG ---
-# API Key muss in den Streamlit Cloud Secrets als GOOGLE_API_KEY hinterlegt sein
+# --- 3. API SETUP ---
+# WICHTIG: Key muss in Streamlit Secrets "GOOGLE_API_KEY" heißen!
 API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
+
+if not API_KEY:
+    st.error("⚠️ KEIN API-KEY GEFUNDEN! Bitte füge 'GOOGLE_API_KEY' in deinen Streamlit Secrets hinzu.")
+    st.stop()
+
 genai.configure(api_key=API_KEY)
 
+# Modellnamen (Stabile Versionen)
 TEXT_MODEL = "gemini-2.5-flash-preview-09-2025"
 IMAGE_MODEL = "imagen-4.0-generate-001"
 
-SYSTEM_INSTRUCTION = """Du bist die Sektor 4 Engine [V28.5]. 
+SYSTEM_PROMPT = """Du bist die Sektor 4 Engine [V28.0]. 
 STRIKTE REGELN: 
-1. Kein Smalltalk. 
-2. Narrativ: 3-4 Sätze, pure Geschichte. Nutze Trenn-Icons (🧬, 🕹️, ⚙️, 🐈) in Leerzeilen.
-3. Kater-Log: Zynischer Mentor-Kommentar.
+1. Narrativ: 3-4 Sätze, pure Geschichte, keine Meta-Begriffe.
+2. Icons: Nutze Trenn-Icons (🧬, 🕹️, ⚙️, 🐈) in Leerzeilen zwischen Absätzen.
+3. Kater-Log: Zynischer Mentor-Kommentar der Felinen Anomalie.
 4. Generiere 4 Optionen (A, B, C, D). D ist IMMER Scavenger-Protokoll.
-5. Visualisierung: Erstelle einen präzisen Prompt für Imagen 4 (9:16 Portrait).
+5. Visualisierung: Erstelle einen englischen Bild-Prompt (9:16 portrait).
 Format: JSON { 
   "kameraFeed": str, "narrativ": str, "katerLog": str, "visualPrompt": str,
   "optionen": [{"id": "A", "titel": str, "desc": str, "stress": str, "loot": str}] 
@@ -111,82 +102,88 @@ if 'round' not in st.session_state:
     st.session_state.current_image = None
 
 # --- 5. LOGIK-FUNKTIONEN ---
-def generate_turn(prompt, image_input=None):
-    try:
-        # 1. Narrativ & Logik
-        model = genai.GenerativeModel(model_name=TEXT_MODEL, system_instruction=SYSTEM_INSTRUCTION)
-        content = [prompt]
-        if image_input:
-            content.append(image_input)
-        
-        response = model.generate_content(content, generation_config={"response_mime_type": "application/json"})
-        data = json.loads(response.text)
-        st.session_state.current_data = data
-        
-        # 2. Visualisierung (Imagen 4)
+def run_engine(prompt, uploaded_image=None):
+    with st.spinner("⏳ SEKTOR 4 ENGINE ANALYSIERT DATEN..."):
         try:
-            img_model = genai.get_model(f"models/{IMAGE_MODEL}")
-            img_prompt = f"9:16 portrait mobile aspect ratio. Cinematic cyberpunk steampunk Berlin. {data['visualPrompt']}. Neon cyan and copper, no human faces."
-            img_resp = img_model.predict(instances={"prompt": img_prompt}, parameters={"sampleCount": 1})
-            st.session_state.current_image = img_resp.predictions[0].bytesBase64Encoded
-        except:
-            st.session_state.current_image = None
+            # TEXT-GENERIERUNG
+            model = genai.GenerativeModel(model_name=TEXT_MODEL, system_instruction=SYSTEM_PROMPT)
+            inputs = [prompt]
+            if uploaded_image:
+                inputs.append(uploaded_image)
             
-    except Exception as e:
-        st.error(f"Engine-Fehler: {e}")
+            response = model.generate_content(inputs, generation_config={"response_mime_type": "application/json"})
+            st.session_state.current_data = json.loads(response.text)
+            
+            # BILD-GENERIERUNG (Fallback, falls Modell nicht verfügbar)
+            try:
+                img_model = genai.get_model(f"models/{IMAGE_MODEL}")
+                visual_prompt = st.session_state.current_data.get("visualPrompt", "Cyberpunk Berlin")
+                img_resp = img_model.predict(
+                    instances={"prompt": f"9:16 portrait. Cinematic cyberpunk. {visual_prompt}"},
+                    parameters={"sampleCount": 1}
+                )
+                st.session_state.current_image = img_resp.predictions[0].bytesBase64Encoded
+            except Exception as e:
+                st.session_state.current_image = None
+                
+        except Exception as e:
+            st.error(f"❌ ENGINE-KOLLAPS: {str(e)}")
 
 def handle_choice(idx):
     choice = st.session_state.current_data['optionen'][idx]
     
-    # Stress & Loot Logik
+    # Stress-Update
     st.session_state.t_load = min(100, st.session_state.t_load + (20 if choice['id'] == "D" else 5))
+    
+    # Loot-Logik
     if choice['id'] == "D":
         st.session_state.loot += 1
         if st.session_state.loot >= 3:
             st.session_state.loot = 0
             ranks = ["Prekär", "Gasse", "Terminal-Access", "Elite"]
-            curr = ranks.index(st.session_state.kapital) if st.session_state.kapital in ranks else 0
-            st.session_state.kapital = ranks[min(len(ranks)-1, curr + 1)]
-    
-    # Biografie in Runde 0 setzen
+            curr_idx = ranks.index(st.session_state.kapital) if st.session_state.kapital in ranks else 0
+            st.session_state.kapital = ranks[min(len(ranks)-1, curr_idx + 1)]
+            
+    # Start-Initialisierung
     if st.session_state.round == 0:
-        mapping = {"A": ("Anpassung", "Prekär"), "B": ("Disruption", "Terminal-Access"), "C": ("Tradition", "Gasse")}
-        st.session_state.habitus, st.session_state.kapital = mapping.get(choice['id'], ("Anpassung", "Prekär"))
+        if choice['id'] == "A": st.session_state.habitus, st.session_state.kapital = "Anpassung", "Prekär"
+        elif choice['id'] == "B": st.session_state.habitus, st.session_state.kapital = "Disruption", "Terminal-Access"
+        elif choice['id'] == "C": st.session_state.habitus, st.session_state.kapital = "Tradition", "Gasse"
 
     st.session_state.round += 1
-    generate_turn(f"Runde {st.session_state.round}. Letzte Wahl: {choice['titel']}. Habitus: {st.session_state.habitus}. Stress: {st.session_state.t_load}%")
+    run_engine(f"Runde {st.session_state.round}. Letzte Wahl: {choice['titel']}. T-Load: {st.session_state.t_load}%")
 
-# --- 6. UI DARSTELLUNG ---
-st.title("SEKTOR 4 ENGINE // V28.5")
+# --- 6. UI ---
+st.title("SEKTOR 4 ENGINE // V28.0")
 
-# SIDEBAR: SCANNER-MODUL
+# Scanner Sidebar
 with st.sidebar:
     st.header("⚙️ Scanner-Modul")
-    uploaded_file = st.file_uploader("Bild zur Analyse hochladen...", type=["jpg", "jpeg", "png"])
-    if uploaded_file:
-        st.image(Image.open(uploaded_file), caption="Scan-Vorschau", use_container_width=True)
+    uploaded = st.file_uploader("Artefakt scannen...", type=["jpg", "png", "jpeg"])
+    if uploaded:
+        st.image(Image.open(uploaded), use_container_width=True)
 
-# START-BUTTON
+# Start-Screen
 if st.session_state.round == 0 and st.session_state.current_data is None:
     if st.button("INITIALISIERE SYSTEM (START)", use_container_width=True):
-        scan_img = Image.open(uploaded_file) if uploaded_file else None
-        generate_turn("START: Initialisierung. Phase 0. Biografie-Wahl.", scan_img)
+        img_input = Image.open(uploaded) if uploaded else None
+        run_engine("START: Initialisierung. Phase 0.", img_input)
         st.rerun()
 
-# GAMEPLAY INHALT
+# Spiel-Inhalt
 if st.session_state.current_data:
     data = st.session_state.current_data
     
-    # Visualisierung
+    # Visualisierung (9:16)
     if st.session_state.current_image:
         st.image(f"data:image/png;base64,{st.session_state.current_image}", use_container_width=True)
     
     st.caption(f"📷 {data['kameraFeed']}")
     st.markdown(f"""
-    <div class="terminal-box">
+    <div class="terminal-container">
         {data['narrativ']}
         <div class="kater-log">
-            <strong>🐈 Kater-Log:</strong><br>
+            <strong>🐈 Feline Anomalie:</strong><br>
             „{data['katerLog']}“
         </div>
     </div>
@@ -200,14 +197,14 @@ if st.session_state.current_data:
 
 # --- 7. HUD ---
 st.markdown("---")
-h1, h2, h3, h4 = st.columns(4)
+cols = st.columns(4)
 stats = [("Habitus", st.session_state.habitus), ("Kapital", st.session_state.kapital), ("Loot", f"{st.session_state.loot}/3"), ("Runde", f"{st.session_state.round}/10")]
-for col, (label, val) in zip([h1, h2, h3, h4], stats):
-    col.markdown(f"<span class='hud-label'>{label}</span><br><span class='hud-value'>{val}</span>", unsafe_allow_html=True)
+for col, (label, val) in zip(cols, stats):
+    col.markdown(f"<div class='hud-box'><div class='hud-label'>{label}</div><div class='hud-value'>{val}</div></div>", unsafe_allow_html=True)
 
 st.write(f"🧠 T-LOAD (STRESS): {st.session_state.t_load}%")
 st.progress(st.session_state.t_load / 100)
 
-if st.button("System Reset"):
+if st.button("System Reset", type="secondary"):
     st.session_state.clear()
     st.rerun()
