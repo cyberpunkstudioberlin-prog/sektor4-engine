@@ -1,7 +1,8 @@
 [server]
-# Verhindert den inotify-Fehler in der Streamlit Cloud
+# Verhindert den Fehler 'inotify instance limit reached'
 runOnSave = false
 headless = true
 
 [browser]
+# Deaktiviert Statistiken für bessere Performance
 gatherUsageStats = false
