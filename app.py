@@ -1,272 +1,406 @@
-import streamlit as st
-import google.generativeai as genai
-import json
-from PIL import Image
-import time
+import React, { useState, useEffect, useRef } from 'react';
+import { Terminal, Shield, Zap, Package, AlertTriangle, Cpu, Loader2, ChevronRight, Info } from 'lucide-react';
 
-# --- 1. SEITEN-KONFIGURATION ---
-st.set_page_config(
-    page_title="Questbook Killswitch // Sektor 4",
-    page_icon="🦾",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+// --- KONFIGURATION & API ---
+const apiKey = ""; // Wird zur Laufzeit bereitgestellt
+const MODEL_TEXT = "gemini-2.5-flash-preview-09-2025";
+const MODEL_IMAGE = "imagen-4.0-generate-001";
 
-# --- 2. ERWEITERTES CUSTOM CSS (TERMINAL-LOOK V30) ---
-st.markdown("""
-<style>
-    /* Grundlegendes Design */
-    .stApp {
-        background-color: #0a0c10;
-        color: #00ff41;
-        font-family: 'Courier New', Courier, monospace;
+const SYSTEM_INSTRUCTION = `
+Rolle: Du bist die Sektor 4 Engine V7.0. Ein eiskaltes, analytisches Inferenz-System für das Textadventure "Questbook Killswitch".
+Murat Zengin ist der alleinige Urheber dieser Open Source Akte.
+
+STRIKTES FORMAT FÜR JEDEN OUTPUT:
+1. 📷 KAMERA-FEED: [Technischer Status-Satz]
+2. 🕹️ NARRATIV: [Max 3 Sätze. Aggressiver Zeitdruck.]
+3. 🐈 KATER-LOG: [Zynischer Kommentar der Felinen Anomalie mit Spielmechanik-Hinweis.]
+4. ❓ ENTSCHEIDUNG: 
+   A) [Text] (Fokus: [Kapital/Habitus])
+   B) [Text] (Fokus: [Kapital/Habitus])
+   C) [Text] (Fokus: [Kapital/Habitus])
+
+LOGIK-MATRIX:
+- T-Load (Stress): Resonanz -10, Dissonanz +20.
+- Phase 2 (R5-7): Das Necromancer-Krokodil absorbiert Berlin. +5 T-Load fix pro Runde. Plündern gesperrt.
+- Phase 3 (R8-10): Matrix-Kollaps. Simulation zerfällt in Code vor der Red Room Panzertür.
+- Killswitch: Bei T-Load 100 ist Ende.
+
+WICHTIG: Antworte NUR im oben genannten Format. Keine Einleitung, kein Geplänkel.
+`;
+
+// --- HILFSFUNKTIONEN ---
+const fetchWithRetry = async (url, options, retries = 5, backoff = 1000) => {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    if (retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      return fetchWithRetry(url, options, retries - 1, backoff * 2);
     }
-    
-    /* Terminal-Box für Story-Inhalte */
-    .terminal-box {
-        border: 1px solid #10b981;
-        padding: 25px;
-        background: rgba(0, 255, 65, 0.02);
-        border-radius: 4px;
-        margin-bottom: 20px;
-        box-shadow: inset 0 0 20px rgba(0, 255, 65, 0.05);
-        line-height: 1.6;
+    throw error;
+  }
+};
+
+export default function App() {
+  // Game State
+  const [round, setRound] = useState(0);
+  const [tLoad, setTLoad] = useState(10);
+  const [kapital, setKapital] = useState(null);
+  const [habitus, setHabitus] = useState(null);
+  const [inventory, setInventory] = useState([]);
+  const [biografie, setBiografie] = useState("Fragment");
+  const [history, setHistory] = useState([]);
+  
+  // UI State
+  const [loading, setLoading] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [currentImage, setCurrentImage] = useState(null);
+  const [currentText, setCurrentText] = useState(null);
+  const [error, setError] = useState(null);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (round === 0 && !currentText) {
+      bootSystem();
     }
-    
-    /* Kater-Log (Zitat-Stil) */
-    .kater-log {
-        border-left: 3px solid #059669;
-        padding-left: 15px;
-        font-style: italic;
-        color: #10b981;
-        margin-top: 20px;
-        font-size: 0.95rem;
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [history, currentText]);
+
+  // --- ENGINE LOGIK ---
+
+  const generateImage = async (promptContext) => {
+    setImageLoading(true);
+    try {
+      const prompt = `Cyberpunk-Steampunk Berlin vibe, 9:16 portrait, industrial Sektor 4, ${promptContext}, rusty metal, gears, pipes, atmospheric smoke, neon yellow warning signs, ${round >= 8 ? 'digital glitches and binary code artifacts' : ''}, no humans.`;
+      
+      const result = await fetchWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_IMAGE}:predict?key=${apiKey}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1 } })
+        }
+      );
+      
+      if (result.predictions?.[0]?.bytesBase64Encoded) {
+        setCurrentImage(`data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`);
+      }
+    } catch (e) {
+      console.error("Image generation failed", e);
+    } finally {
+      setImageLoading(false);
+    }
+  };
+
+  const callEngine = async (userPrompt) => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Build internal state context for Gemini
+      const context = `
+        Aktueller Status:
+        Runde: ${round}/10
+        T-Load: ${tLoad}/100
+        Kapital: ${kapital}
+        Habitus: ${habitus}
+        Inventar: ${inventory.join(", ") || "Leer"}
+        Biografie: ${biografie}
+      `;
+
+      const response = await fetchWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_TEXT}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: context + "\n\nUser Action: " + userPrompt }] }],
+            systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }
+          })
+        }
+      );
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("Keine Antwort von der Engine.");
+      
+      setCurrentText(parseOutput(text));
+      // Trigger image for the new scene
+      generateImage(text.substring(0, 100));
+
+    } catch (e) {
+      setError("Verbindung zum Sektor 4 Server unterbrochen. " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const parseOutput = (text) => {
+    const lines = text.split('\n');
+    return {
+      feed: lines.find(l => l.includes('📷')) || "KAMERA-FEED: Offline.",
+      narrative: lines.filter(l => l.includes('🕹️') || (!l.includes('📷') && !l.includes('🐈') && !l.includes('❓') && l.trim().length > 10)).join(' '),
+      log: lines.find(l => l.includes('🐈')) || "KATER-LOG: [Datenkorruption]",
+      choices: lines.filter(l => /^[A-C]\)/.test(l.trim())).map(c => {
+        const parts = c.split('(');
+        return {
+          label: c.trim(),
+          text: parts[0].replace(/^[A-C]\)/, '').trim(),
+          meta: parts[1] ? parts[1].replace(')', '').trim() : ""
+        };
+      })
+    };
+  };
+
+  const bootSystem = () => {
+    callEngine("SYSTEM BOOT. Initialisiere Phase 0.");
+  };
+
+  const handleChoice = (choice) => {
+    if (round === 0) {
+      // Initial Choice sets stats
+      const meta = choice.meta.toLowerCase();
+      if (meta.includes('elite')) setKapital('Elite');
+      else if (meta.includes('gasse')) setKapital('Gasse');
+      else setKapital('Prekär');
+
+      if (meta.includes('tradition')) setHabitus('Tradition');
+      else if (meta.includes('anpassung')) setHabitus('Anpassung');
+      else setHabitus('Disruption');
+      
+      setBiografie(choice.text.split(' ')[0]);
+    } else {
+      // Logic for T-Load
+      let tChange = 20; // Default Dissonance
+      if (choice.meta.toLowerCase().includes(habitus?.toLowerCase())) {
+        tChange = -10; // Resonance
+      }
+      
+      let phaseBonus = (round >= 5 && round <= 7) ? 5 : 0;
+      let r7Bonus = (round === 7) ? 15 : 0;
+      
+      const newTLoad = Math.min(100, Math.max(0, tLoad + tChange + phaseBonus + r7Bonus));
+      setTLoad(newTLoad);
+      
+      if (newTLoad >= 100) {
+        // Killswitch handled in render
+      }
     }
 
-    /* HUD (Stats-Leiste) */
-    .hud-box {
-        background: rgba(0, 0, 0, 0.6);
-        border: 1px solid #065f46;
-        padding: 12px;
-        text-align: center;
-        border-radius: 4px;
-    }
-    .hud-label { 
-        color: #065f46; 
-        font-size: 0.7rem; 
-        text-transform: uppercase; 
-        letter-spacing: 2px;
-        display: block;
-        margin-bottom: 4px;
-    }
-    .hud-value { 
-        font-weight: bold; 
-        color: #00ff41; 
-        font-size: 1rem;
-        display: block;
-    }
-    
-    /* Interaktive Buttons */
-    .stButton>button {
-        width: 100%;
-        background-color: rgba(0, 255, 65, 0.05) !important;
-        color: #00ff41 !important;
-        border: 1px solid #065f46 !important;
-        text-align: left !important;
-        padding: 18px !important;
-        transition: 0.3s !important;
-        border-radius: 4px !important;
-    }
-    .stButton>button:hover {
-        background-color: #00ff41 !important;
-        color: #000 !important;
-        border-color: #00ff41 !important;
-        box-shadow: 0 0 15px rgba(0, 255, 65, 0.3) !important;
-    }
+    setRound(prev => prev + 1);
+    callEngine(choice.label);
+  };
 
-    /* Scanline-Effekt (Overlay) */
-    .stApp::after {
-        content: " ";
-        display: block;
-        position: fixed;
-        top: 0; left: 0; bottom: 0; right: 0;
-        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
-        z-index: 9999;
-        background-size: 100% 4px, 3px 100%;
-        pointer-events: none;
-        opacity: 0.15;
-    }
-</style>
-""", unsafe_allow_html=True)
+  const handleLoot = () => {
+    if (round >= 5 && round <= 7) return; // Locked in Phase 2
+    if (inventory.length >= 3) return;
 
-# --- 3. API INITIALISIERUNG ---
-# API Key aus Streamlit Secrets (Settings -> Secrets auf streamlit.app)
-API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
+    setTLoad(prev => Math.min(100, prev + 10));
+    const items = ["Neuro-Link-Bypass", "S-Bahn-Schlüssel", "Hydraulik-Brecher", "Frequenz-Störer"];
+    const newItem = items[Math.floor(Math.random() * items.length)];
+    setInventory(prev => [...prev, newItem]);
+    callEngine(`PLÜNDERN. Ich suche nach Hardware. Gefunden: ${newItem}`);
+  };
 
-if not API_KEY:
-    st.error("⚠️ API-KEY NICHT GEFUNDEN! Bitte 'GOOGLE_API_KEY' in den Streamlit Secrets hinterlegen.")
-    st.stop()
+  // --- RENDER HILFEN ---
 
-genai.configure(api_key=API_KEY)
+  const renderTLoadBar = (value) => {
+    const bars = Math.floor(value / 5);
+    const empty = 20 - bars;
+    return "[" + "|".repeat(bars) + "-".repeat(empty) + "]";
+  };
 
-# Konfiguration der Engine
-SYSTEM_PROMPT = """Du bist die Sektor 4 Engine [V30.0]. 
-DIREKTIVE: Die immersive Geschichte hat höchste Priorität.
-STRIKTE REGELN:
-1. Narrativ: 3-4 Sätze, pure Geschichte, keine Meta-Begriffe wie "Level" oder "Option".
-2. Icons: Nutze Trenn-Icons (🧬, 🕹️, ⚙️, 🐈) in Leerzeilen zwischen Absätzen.
-3. Kater-Log: Ein zynischer Kommentar der "Felinen Anomalie".
-4. Entscheidungen: Generiere exakt 4 Optionen (A, B, C, D). D ist IMMER "Scavenger-Protokoll".
-5. Visualisierung: Erstelle einen englischen Bild-Prompt (9:16 portrait).
-Formatierung: Gib NUR valides JSON zurück. 
-Schema: { "kameraFeed": string, "narrativ": string, "katerLog": string, "visualPrompt": string, "optionen": [{ "id": "A"|"B"|"C"|"D", "titel": string, "beschreibung": string, "stress": string, "loot": string }] }"""
-
-# --- 4. SESSION STATE MANAGEMENT ---
-# Wir nutzen Session State, um den Spielfortschritt über Klicks hinweg zu speichern
-if 'round' not in st.session_state:
-    st.session_state.update({
-        'round': 0,
-        't_load': 10,
-        'loot': 0,
-        'kapital': "Defining...",
-        'habitus': "Defining...",
-        'current_turn': None,
-        'current_image': None,
-        'is_loading': False
-    })
-
-# --- 5. CORE LOGIC ---
-def run_engine(prompt, uploaded_image=None):
-    """Zentraler Aufruf der KI-Engine für Text und Bild."""
-    st.session_state.is_loading = True
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash-preview-09-2025",
-        system_instruction=SYSTEM_PROMPT
-    )
-    
-    contents = [prompt]
-    if uploaded_image:
-        contents.append(uploaded_image)
-    
-    try:
-        # 1. Narrativ & Spiel-Logik generieren
-        with st.status("📡 Synchronisiere Sektor-Daten...", expanded=True) as status:
-            response = model.generate_content(contents, generation_config={"response_mime_type": "application/json"})
-            data = json.loads(response.text)
-            st.session_state.current_turn = data
-            status.update(label="✅ Daten empfangen. Generiere Visualisierung...", state="running")
-            
-            # 2. Visualisierung generieren (Imagen)
-            try:
-                img_model = genai.get_model("models/imagen-4.0-generate-001")
-                img_prompt = f"9:16 portrait mobile aspect ratio. Cinematic cyberpunk steampunk Berlin. {data['visualPrompt']}. Neon cyan and copper, industrial grit."
-                img_resp = img_model.predict(
-                    instances={"prompt": img_prompt},
-                    parameters={"sampleCount": 1}
-                )
-                st.session_state.current_image = img_resp.predictions[0].bytesBase64Encoded
-            except Exception:
-                st.session_state.current_image = None
-            
-            status.update(label="✅ Simulation bereit.", state="complete")
-            
-    except Exception as e:
-        st.error(f"❌ Engine-Kollaps: {e}")
-    finally:
-        st.session_state.is_loading = False
-
-def handle_choice(choice):
-    """Verarbeitet die Spielerwahl und aktualisiert die Stats."""
-    # Stress-Zunahme (T-Load)
-    stress_gain = 20 if choice['id'] == 'D' else 5
-    st.session_state.t_load = min(100, st.session_state.t_load + stress_gain)
-    
-    # Loot-Logik (Y-Kapital Upgrade bei 3/3)
-    if choice['id'] == 'D':
-        st.session_state.loot += 1
-        if st.session_state.loot >= 3:
-            st.session_state.loot = 0
-            ranks = ["Prekär", "Gasse", "Terminal-Access", "Elite"]
-            current_idx = ranks.index(st.session_state.kapital) if st.session_state.kapital in ranks else 0
-            st.session_state.kapital = ranks[min(len(ranks)-1, current_idx + 1)]
-            
-    # Initial-Habitus in Runde 0 setzen
-    if st.session_state.round == 0:
-        h_map = {"A": "Anpassung", "B": "Disruption", "C": "Tradition"}
-        k_map = {"A": "Prekär", "B": "Terminal-Access", "C": "Gasse"}
-        st.session_state.habitus = h_map.get(choice['id'], "Anpassung")
-        st.session_state.kapital = k_map.get(choice['id'], "Prekär")
-
-    st.session_state.round += 1
-    
-    # Nächsten Spielzug anfordern
-    next_prompt = f"Runde: {st.session_state.round}. Letzte Aktion: {choice['titel']}. Status: Stress {st.session_state.t_load}%, Kapital {st.session_state.kapital}. Phase: {'Jagd' if st.session_state.round < 5 else 'Eskalation'}."
-    run_engine(next_prompt)
-
-# --- 6. UI AUFBAU ---
-st.title("SEKTOR 4 ENGINE // V30.0")
-
-# SIDEBAR: SCANNER
-with st.sidebar:
-    st.header("⚙️ Scanner-Modul")
-    uploaded_file = st.file_uploader("Artefakt zur Analyse hochladen...", type=["jpg", "png", "jpeg"])
-    if uploaded_file:
-        st.image(Image.open(uploaded_file), caption="Analysiere Scan...", width="stretch")
-
-# START-LOGIK
-if st.session_state.round == 0 and st.session_state.current_turn is None:
-    if st.button("INITIALISIERE SYSTEM (START)", use_container_width=True):
-        img_in = Image.open(uploaded_file) if uploaded_file else None
-        run_engine("START: Initialisierung. Phase 0. Biografie-Wahl.", img_in)
-        st.rerun()
-
-# SPIEL-INTERFACE
-if st.session_state.current_turn:
-    turn = st.session_state.current_turn
-    
-    # 1. Visualisierung (9:16)
-    if st.session_state.current_image:
-        st.image(f"data:image/png;base64,{st.session_state.current_image}", width="stretch")
-    
-    # 2. Kamera-Feed
-    st.caption(f"📷 {turn['kameraFeed']}")
-    
-    # 3. Narrativ & Kater-Log
-    st.markdown(f"""
-    <div class="terminal-box">
-        {turn['narrativ']}
-        <div class="kater-log">
-            <strong>🐈 Feline Anomalie:</strong><br>
-            „{turn['katerLog']}“
+  if (tLoad >= 100) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-6 text-red-600 font-mono text-center">
+        <div className="max-w-md space-y-6 border-2 border-red-900 p-8 rounded-lg animate-pulse">
+          <AlertTriangle className="mx-auto w-16 h-16" />
+          <h1 className="text-2xl font-bold">SYSTEM FATAL ERROR</h1>
+          <p className="text-sm">T-LOAD LIMIT ÜBERSCHRITTEN.<br/>BIO-EINHEIT ZERSTÖRT.<br/>GAME OVER.</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 border border-red-600 hover:bg-red-900 transition-colors"
+          >
+            SYSTEM NEUSTART
+          </button>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-zinc-300 font-mono selection:bg-yellow-500 selection:text-black flex flex-col md:flex-row overflow-hidden">
+      
+      {/* LINKER BEREICH: VISUALS (9:16) */}
+      <div className="w-full md:w-[450px] lg:w-[500px] bg-black relative flex-shrink-0 border-r border-zinc-800">
+        {imageLoading ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 animate-pulse">
+            <Loader2 className="w-12 h-12 text-yellow-500 animate-spin mb-4" />
+            <span className="text-xs text-yellow-500 tracking-widest uppercase">Generiere Inferenz-Visual...</span>
+          </div>
+        ) : currentImage ? (
+          <img src={currentImage} className="w-full h-full object-cover opacity-80" alt="Sektor 4 View" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
+            <Cpu className="w-16 h-16 text-zinc-800" />
+          </div>
+        )}
+        
+        {/* Phase Overlay */}
+        <div className="absolute top-4 left-4 bg-black/80 px-3 py-1 border border-yellow-500/50 text-[10px] text-yellow-500 uppercase tracking-tighter">
+          {round < 5 ? "Phase 1: Die Jagd" : round < 8 ? "Phase 2: Schrott-Gott" : "Phase 3: Kollaps"}
+        </div>
+        
+        {/* CRT Scanline Effect */}
+        <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] z-10 opacity-30"></div>
+      </div>
+
+      {/* RECHTER BEREICH: TERMINAL & LOGIK */}
+      <div className="flex-1 flex flex-col h-[60vh] md:h-screen overflow-hidden">
+        
+        {/* Header */}
+        <div className="bg-zinc-900/50 border-b border-zinc-800 p-4 flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+            <h1 className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-400">Questbook Killswitch // Sektor 4 Engine</h1>
+          </div>
+          <div className="text-[10px] text-zinc-500">v7.0.FINAL</div>
+        </div>
+
+        {/* Output Scroll Area */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 scrollbar-hide">
+          {error && (
+            <div className="p-4 border border-red-500/30 bg-red-500/10 text-red-400 text-xs flex items-center gap-3">
+              <AlertTriangle className="w-4 h-4 shrink-0" /> {error}
+            </div>
+          )}
+
+          {currentText && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              {/* Kamera Feed */}
+              <div className="flex items-start gap-3">
+                <Terminal className="w-4 h-4 text-yellow-500 shrink-0 mt-1" />
+                <p className="text-[11px] leading-relaxed text-yellow-500/80 bg-yellow-500/5 px-2 py-1 border-l border-yellow-500">
+                  {currentText.feed.replace('📷 ', '')}
+                </p>
+              </div>
+
+              {/* Narrativ */}
+              <div className="space-y-4">
+                <p className="text-base md:text-lg text-zinc-100 leading-relaxed font-medium">
+                  {currentText.narrative.replace('🕹️ ', '')}
+                </p>
+                
+                {/* Kater Log */}
+                <div className="relative pl-6 py-2">
+                  <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-zinc-700"></div>
+                  <p className="italic text-zinc-400 text-sm md:text-base">
+                    <span className="text-zinc-500 mr-2 uppercase text-[10px] not-italic font-bold">Kater-Log:</span>
+                    {currentText.log.replace('🐈 ', '').replace('Kater-Log: ', '')}
+                  </p>
+                </div>
+              </div>
+
+              {/* Decisions */}
+              <div className="grid gap-3 pt-4 pb-12">
+                {currentText.choices.map((choice, idx) => (
+                  <button
+                    key={idx}
+                    disabled={loading}
+                    onClick={() => handleChoice(choice)}
+                    className="group relative w-full text-left p-4 bg-zinc-900/40 border border-zinc-800 hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+                  >
+                    <div className="flex items-center gap-4 relative z-10">
+                      <span className="text-yellow-500 font-bold text-lg">{choice.label.charAt(0)}</span>
+                      <div className="flex-1">
+                        <p className="text-sm text-zinc-200 group-hover:text-white transition-colors">{choice.text}</p>
+                        <p className="text-[9px] text-zinc-500 uppercase tracking-widest mt-1">[{choice.meta}]</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-zinc-700 group-hover:text-yellow-500 transition-colors translate-x-0 group-hover:translate-x-1" />
+                    </div>
+                  </button>
+                ))}
+                
+                {/* Plünderer Button */}
+                {round > 0 && round < 5 && inventory.length < 3 && (
+                  <button
+                    onClick={handleLoot}
+                    disabled={loading}
+                    className="mt-4 border border-dashed border-zinc-700 p-3 text-[10px] text-zinc-500 hover:text-yellow-500 hover:border-yellow-500/50 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Package className="w-3 h-3" /> [PLÜNDERER-PROTOKOLL STARTEN (+10 T-LOAD)]
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          <div ref={scrollRef} />
+        </div>
+
+        {/* HUD: Footer Area */}
+        <div className="bg-[#0f0f0f] border-t border-zinc-800 p-4 md:p-6 shrink-0 shadow-[0_-20px_40px_rgba(0,0,0,0.5)]">
+          <div className="max-w-4xl mx-auto space-y-4">
+            
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[10px] uppercase tracking-widest">
+              <div className="flex flex-col gap-1">
+                <span className="text-zinc-500">Kapital</span>
+                <span className="text-zinc-200 font-bold flex items-center gap-2">
+                  <Shield className="w-3 h-3 text-yellow-500" /> {kapital || "Ausstehend"}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-zinc-500">Habitus</span>
+                <span className="text-zinc-200 font-bold flex items-center gap-2">
+                  <Zap className="w-3 h-3 text-yellow-500" /> {habitus || "Ausstehend"}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-zinc-500">Runde</span>
+                <span className="text-zinc-200 font-bold">{round}/10</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-zinc-500">Inventar</span>
+                <span className="text-zinc-200 font-bold">
+                  {inventory.length > 0 ? inventory.join(", ") : "Keine Hardware"}
+                </span>
+              </div>
+            </div>
+
+            {/* T-Load Bar */}
+            <div className="pt-2">
+              <div className="flex justify-between items-end mb-1">
+                <span className="text-[10px] text-yellow-500 font-bold uppercase tracking-widest">T-Load Stress-Faktor</span>
+                <span className={`text-sm font-bold ${tLoad > 75 ? 'text-red-500 animate-pulse' : 'text-yellow-500'}`}>
+                  {tLoad}/100
+                </span>
+              </div>
+              <div className="h-4 w-full bg-zinc-900 border border-zinc-800 relative overflow-hidden flex items-center justify-center">
+                 <div className="absolute inset-0 flex items-center justify-center text-[9px] text-zinc-600 z-10 pointer-events-none">
+                    {renderTLoadBar(tLoad)}
+                 </div>
+                 <div 
+                    className={`h-full transition-all duration-1000 ${tLoad > 80 ? 'bg-red-500/50' : tLoad > 50 ? 'bg-yellow-500/50' : 'bg-green-500/30'}`}
+                    style={{ width: `${tLoad}%` }}
+                 ></div>
+              </div>
+            </div>
+            
+            {loading && (
+              <div className="flex items-center gap-2 text-[10px] text-yellow-500 animate-pulse">
+                <Loader2 className="w-3 h-3 animate-spin" /> Inferenz-Engine berechnet nächsten Zustand...
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes scanline {
+          0% { transform: translateY(-100%); }
+          100% { transform: translateY(100%); }
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+      `}} />
     </div>
-    """, unsafe_allow_html=True)
-    
-    # 4. Entscheidungs-Buttons
-    if not st.session_state.is_loading:
-        for i, opt in enumerate(turn['optionen']):
-            btn_text = f"**{opt['id']}) {opt['titel']}**\n\n{opt['beschreibung']}\n\n[Stress: {opt['stress']} | Loot: {opt['loot']}]"
-            if st.button(btn_text, key=f"choice_{i}", use_container_width=True):
-                handle_choice(opt)
-                st.rerun()
-
-# --- 7. HUD (FOOTER) ---
-st.markdown("---")
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown(f"<div class='hud-box'><span class='hud-label'>Habitus</span><span class='hud-value'>{st.session_state.habitus}</span></div>", unsafe_allow_html=True)
-with col2:
-    st.markdown(f"<div class='hud-box'><span class='hud-label'>Kapital</span><span class='hud-value'>{st.session_state.kapital}</span></div>", unsafe_allow_html=True)
-with col3:
-    st.markdown(f"<div class='hud-box'><span class='hud-label'>Loot</span><span class='hud-value'>{st.session_state.loot}/3</span></div>", unsafe_allow_html=True)
-with col4:
-    st.markdown(f"<div class='hud-box'><span class='hud-label'>Runde</span><span class='hud-value'>{st.session_state.round}/10</span></div>", unsafe_allow_html=True)
-
-# T-Load Bar
-st.write(f"🧠 T-LOAD (STRESS): {st.session_state.t_load}%")
-st.progress(st.session_state.t_load / 100)
-
-if st.button("System Reset", type="secondary", use_container_width=True):
-    st.session_state.clear()
-    st.rerun()
+  );
+}
