@@ -1,0 +1,7 @@
+[server]
+# Verhindert den inotify-Fehler in der Streamlit Cloud
+runOnSave = false
+headless = true
+
+[browser]
+gatherUsageStats = false
