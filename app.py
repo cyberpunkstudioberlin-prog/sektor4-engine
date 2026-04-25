@@ -12,6 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# CSS für das eiskalte Berlin-Dystopie Design
 st.markdown("""
     <style>
     .stApp { background-color: #050505; color: #d4d4d8; font-family: 'Courier New', monospace; }
@@ -25,7 +26,7 @@ st.markdown("""
 
 # API-Client Setup (Neues SDK)
 if "GEMINI_API_KEY" in st.secrets:
-    os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+    os.environ["GOOGLE_API_KEY"] = st.secrets["GEMINI_API_KEY"]
     client = genai.Client()
 else:
     st.error("🚨 API-KEY FEHLT: Bitte in Streamlit Cloud Secrets 'GEMINI_API_KEY' eintragen.")
@@ -34,38 +35,30 @@ else:
 # --- 2. SYSTEM-PROMPT ---
 FULL_SYSTEM_PROMPT = """
 Rolle: Du bist die Sektor 4 Engine, ein deterministisches Inferenz-System für das Textadventure "Questbook Killswitch".
-Stil: Eiskalt, analytisch, zynisch und absolut direkt.
+Stil: Eiskalt, analytisch, zynisch und direkt.
 
 WICHTIG: Du MUSST zwingend im validen JSON-Format antworten. 
 Struktur:
 {
-  "kamera": "[1 technischer Status-Satz zum visuellen Input der Umgebung]",
-  "narrativ": "[Max. 3 Sätze. Aggressiv, physisch, klaustrophobisch. Zeitdruck erzeugen.]",
-  "kater_log": "[1-2 zynische Sätze der Felinen Anomalie mit überlebenswichtigen Hinweisen.]",
+  "kamera": "[Status-Satz]",
+  "narrativ": "[Max. 3 Sätze]",
+  "kater_log": "[Zynischer Hinweis]",
   "optionen": {
-    "A": {"text": "[Text]", "fokus": "[Kapital/Habitus]"},
-    "B": {"text": "[Text]", "fokus": "[Kapital/Habitus]"}
+    "A": {"text": "[Text]", "fokus": "[Fokus]"},
+    "B": {"text": "[Text]", "fokus": "[Fokus]"}
   },
   "hud_update": {
-    "t_load_neu": [Integer 0-100: BERECHNE den neuen Stresswert basierend auf Habitus-Konformität],
-    "kommentar": "[Kurze Begründung der kognitiven Dissonanz]"
+    "t_load_neu": [Zahl 0-100],
+    "kommentar": "[Grund]"
   }
 }
-
-🛠️ SPIEL-MECHANIK:
-- Kein RNG: Konsequenzen basieren rein logisch auf Optionen und Habitus.
-- T-Load (Stress): Startet bei 10. Steigt bei jeder Aktion, massiv bei Handeln gegen den Habitus.
-- Phasen: 
-  Runde 1-4 (Die Jagd): Mechanische Zombie-Kuscheltiere.
-  Runde 5-7 (Eskalation): Necromancer Krokodil destabilisiert alles.
-  Runde 8-10 (Kollaps): Realität zerreißt zu Code-Glitches. Red Room Enthüllung.
 """
 
-# --- 3. KI-KERNFUNKTIONEN (Angepasst an neues SDK) ---
+# --- 3. KI-KERNFUNKTIONEN MIT FEHLER-LOG ---
 def call_gemini_json(prompt, system_instruction):
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash', # Stabiles Modell für JSON
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -74,11 +67,13 @@ def call_gemini_json(prompt, system_instruction):
         )
         return json.loads(response.text)
     except Exception as e:
-        print(f"API Fehler: {e}")
+        # Gibt den exakten API-Fehler im Interface aus, damit wir ihn finden können
         return {
-            "kamera": "Signal verloren.", "narrativ": "Inferenz fehlgeschlagen.", "kater_log": "'Das System kollabiert.'",
+            "kamera": f"🚨 API-FEHLER: {str(e)}", 
+            "narrativ": "Die Matrix blockiert den Zugriff. Lies den Fehler-Code im Kamera-Feed oben.", 
+            "kater_log": "'Wir tappen im Dunkeln, solange wir den echten Fehler nicht sehen.'",
             "optionen": {"A": {"text": "Neu kalibrieren", "fokus": "System"}},
-            "hud_update": {"t_load_neu": st.session_state.t_load, "kommentar": "Error"}
+            "hud_update": {"t_load_neu": st.session_state.t_load, "kommentar": "Diagnose-Modus aktiv"}
         }
 
 def generate_image(prompt):
@@ -88,7 +83,6 @@ def generate_image(prompt):
             prompt=prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,
-                output_mime_type="image/jpeg",
                 aspect_ratio="9:16"
             )
         )
@@ -96,6 +90,7 @@ def generate_image(prompt):
             image_bytes = result.generated_images[0].image.image_bytes
             return f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"
     except Exception as e:
+        # Falls nur das Bild fehlschlägt, geben wir das im Log aus
         print(f"Bild Fehler: {e}")
         return None
 
@@ -115,11 +110,7 @@ def process_step(user_input):
     else:
         st.session_state.round += 1
 
-    phase_context = "Industrial Berlin steampunk ruins, mechanical animals"
-    if 5 <= st.session_state.round <= 7: phase_context = "Mechanical Necromancer crocodile in rusty infrastructure"
-    elif st.session_state.round >= 8: phase_context = "Digital glitches, reality tearing to code, binary artifacts"
-
-    img_prompt = f"Cyberpunk-Steampunk-Fusion, Berlin-Vibe, {phase_context}, rusty, atmospheric. NO HUMANS, NO BLOOD."
+    img_prompt = f"Cyberpunk-Steampunk Berlin, industrial ruins, atmospheric, rusty, no humans. 9:16 portrait."
 
     with st.spinner("🔄 Inferenz-Engine berechnet nächsten Zyklus..."):
         prompt = f"Spieler-Aktion: {user_input} | Status: Runde {st.session_state.round}, Habitus {st.session_state.habitus}, Kapital {st.session_state.kapital}, T-Load {st.session_state.t_load}"
@@ -140,7 +131,6 @@ else:
 
     with col_vis:
         if st.session_state.last_image:
-            # use_container_width durch das aktuellere width="stretch" ersetzt (gemäß deinen Logs)
             st.image(st.session_state.last_image, width="stretch")
         else:
             st.info("Kamera-Feed offline. Warte auf Inferenz...")
