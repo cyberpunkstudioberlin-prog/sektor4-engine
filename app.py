@@ -24,7 +24,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# API-Client Setup (Neues SDK)
+# API-Client Setup
 if "GEMINI_API_KEY" in st.secrets:
     os.environ["GOOGLE_API_KEY"] = st.secrets["GEMINI_API_KEY"]
     client = genai.Client()
@@ -54,11 +54,11 @@ Struktur:
 }
 """
 
-# --- 3. KI-KERNFUNKTIONEN MIT FEHLER-LOG ---
+# --- 3. KI-KERNFUNKTIONEN (Modell auf 1.5 Flash umgestellt) ---
 def call_gemini_json(prompt, system_instruction):
     try:
         response = client.models.generate_content(
-            model='gemini-2.0-flash', # Stabiles Modell für JSON
+            model='gemini-1.5-flash', # Umstellung zur Vermeidung von 429-Fehlern
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -67,13 +67,12 @@ def call_gemini_json(prompt, system_instruction):
         )
         return json.loads(response.text)
     except Exception as e:
-        # Gibt den exakten API-Fehler im Interface aus, damit wir ihn finden können
         return {
-            "kamera": f"🚨 API-FEHLER: {str(e)}", 
-            "narrativ": "Die Matrix blockiert den Zugriff. Lies den Fehler-Code im Kamera-Feed oben.", 
-            "kater_log": "'Wir tappen im Dunkeln, solange wir den echten Fehler nicht sehen.'",
+            "kamera": f"🚨 DIAGNOSE: {str(e)}", 
+            "narrativ": "Die Matrix blockiert den Zugriff. Prüfe den Fehler-Code im Kamera-Feed.", 
+            "kater_log": "'Das System wehrt sich gegen die Inferenz.'",
             "optionen": {"A": {"text": "Neu kalibrieren", "fokus": "System"}},
-            "hud_update": {"t_load_neu": st.session_state.t_load, "kommentar": "Diagnose-Modus aktiv"}
+            "hud_update": {"t_load_neu": st.session_state.t_load, "kommentar": "Fehler-Modus"}
         }
 
 def generate_image(prompt):
@@ -89,9 +88,7 @@ def generate_image(prompt):
         if result.generated_images:
             image_bytes = result.generated_images[0].image.image_bytes
             return f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"
-    except Exception as e:
-        # Falls nur das Bild fehlschlägt, geben wir das im Log aus
-        print(f"Bild Fehler: {e}")
+    except:
         return None
 
 # --- 4. ENGINE STATE MANAGEMENT ---
