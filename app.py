@@ -54,11 +54,11 @@ Struktur:
 }
 """
 
-# --- 3. KI-KERNFUNKTIONEN (Modell auf 1.5 Flash umgestellt) ---
+# --- 3. KI-KERNFUNKTIONEN ---
 def call_gemini_json(prompt, system_instruction):
     try:
         response = client.models.generate_content(
-            model='gemini-1.5-flash', # Umstellung zur Vermeidung von 429-Fehlern
+            model='gemini-1.5-flash-8b', # Exakter Name für das kostenlose, schnelle Modell
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
