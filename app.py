@@ -1,15 +1,16 @@
 import streamlit as st
 import google.generativeai as genai
-import time
+import json
 import base64
 
-# --- KONFIGURATION & DESIGN ---
-st.set_page_config(page_title="Sektor 4 Engine", layout="wide", initial_sidebar_state="collapsed")
+# --- 1. KONFIGURATION & DESIGN ---
+st.set_page_config(
+    page_title="Sektor 4 Engine // Questbook Killswitch", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
-# Projekt-Metadaten: 163154392554
-# Autor: Murat Zengin
-
-# CSS für das eiskalte Berlin-Dystopie Design
+# CSS für das eiskalte Berlin-Dystopie Design (basierend auf Projekt-Vorgaben)
 st.markdown("""
     <style>
     .stApp { background-color: #050505; color: #d4d4d8; font-family: 'Courier New', monospace; }
@@ -21,27 +22,63 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# API-Key Sicherheit (Lädt aus Streamlit Secrets)
+# API-Key Sicherheit (Streamlit Secrets)
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
     st.error("🚨 API-KEY FEHLT: Bitte in Streamlit Cloud unter Settings -> Secrets 'GEMINI_API_KEY' eintragen.")
 
-# --- KI FUNKTIONEN ---
-def call_gemini_text(prompt, system_instruction):
+# --- 2. SYSTEM-PROMPT (Striktes Inferenz-Regelwerk) ---
+# [span_1](start_span)[span_2](start_span)Integriert alle Regeln aus der Sektor 4 Engine Dokumentation[span_1](end_span)[span_2](end_span)
+FULL_SYSTEM_PROMPT = """
+[span_3](start_span)Rolle: Du bist die Sektor 4 Engine, ein deterministisches Inferenz-System für das Textadventure "Questbook Killswitch".[span_3](end_span)
+[span_4](start_span)Stil: Eiskalt, analytisch, zynisch und absolut direkt (KISS-Prinzip).[span_4](end_span)
+
+WICHTIG: Du MUSST zwingend im validen JSON-Format antworten. 
+Struktur:
+{
+  [span_5](start_span)"kamera": "[1 technischer Status-Satz zum visuellen Input der Umgebung]",[span_5](end_span)
+  [span_6](start_span)"narrativ": "[Max. 3 Sätze. Aggressiv, physisch, klaustrophobisch. Zeitdruck erzeugen.]",[span_6](end_span)
+  [span_7](start_span)"kater_log": "[1-2 zynische Sätze der Felinen Anomalie mit überlebenswichtigen Hinweisen.]",[span_7](end_span)
+  "optionen": {
+    "A": {"text": "[Text]", "fokus": "[Kapital/Habitus]"},
+    "B": {"text": "[Text]", "fokus": "[Kapital/Habitus]"}
+  },
+  "hud_update": {
+    [span_8](start_span)"t_load_neu": [Integer 0-100: BERECHNE den neuen Stresswert basierend auf Habitus-Konformität],[span_8](end_span)
+    "kommentar": "[Kurze Begründung der kognitiven Dissonanz]"
+  }
+}
+
+🛠️ SPIEL-MECHANIK:
+- [span_9](start_span)Kein RNG: Konsequenzen basieren rein logisch auf Optionen und Habitus.[span_9](end_span)
+- [span_10](start_span)[span_11](start_span)T-Load (Stress): Startet bei 10. Steigt bei jeder Aktion, massiv bei Handeln gegen den Habitus.[span_10](end_span)[span_11](end_span)
+- Phasen: 
+  [span_12](start_span)Runde 1-4 (Die Jagd): Mechanische Zombie-Kuscheltiere.[span_12](end_span)
+  [span_13](start_span)Runde 5-7 (Eskalation): Necromancer Krokodil destabilisiert alles.[span_13](end_span)
+  Runde 8-10 (Kollaps): Realität zerreißt zu Code-Glitches. [span_14](start_span)[span_15](start_span)Red Room Enthüllung.[span_14](end_span)[span_15](end_span)
+"""
+
+# --- 3. KI-KERNFUNKTIONEN ---
+def call_gemini_json(prompt, system_instruction):
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash-preview-09-2025",
-            system_instruction=system_instruction
+            model_name="gemini-2.5-flash", # Für schnelle, strukturierte Inferenz
+            system_instruction=system_instruction,
+            generation_config={"response_mime_type": "application/json"}
         )
         response = model.generate_content(prompt)
-        return response.text
+        return json.loads(response.text)
     except Exception as e:
-        return "📷 KAMERA-FEED: Gestört.\n🕹️ NARRATIV: Die Verbindung zum Sektor ist instabil.\n🐈 KATER-LOG: 'Sogar das System hat Angst vor dem Krokodil.'\n❓ ENTSCHEIDUNG:\nA) Verbindung neu kalibrieren"
+        return {
+            "kamera": "Gestört.", "narrativ": "Systemfehler.", "kater_log": "'Selbst die Matrix blutet.'",
+            "optionen": {"A": {"text": "Reboot", "fokus": "System"}},
+            "hud_update": {"t_load_neu": st.session_state.t_load, "kommentar": "Error"}
+        }
 
 def generate_image(prompt):
     try:
-        # Nutzung des aktuellen Bild-Modells
+        # [span_16](start_span)Nutzung von Imagen 3 für die Cyberpunk-Steampunk Visuals[span_16](end_span)
         model = genai.GenerativeModel("imagen-3.0-generate-002") 
         response = model.generate_content(prompt)
         if response.candidates[0].content.parts[0].inline_data:
@@ -50,55 +87,42 @@ def generate_image(prompt):
     except:
         return "https://via.placeholder.com/450x800.png?text=SEKTOR+4+SIGNAL+LOST"
 
-# --- ENGINE STATE MANAGEMENT ---
+# --- 4. ENGINE STATE MANAGEMENT ---
 if 'round' not in st.session_state:
     st.session_state.update({
         'round': 0, 't_load': 10, 'kapital': None, 'habitus': None,
-        'inventory': [], 'last_image': None, 'last_text': None
+        'last_data': None, 'last_image': None
     })
-
-SYSTEM_PROMPT = """
-Rolle: Du bist die Sektor 4 Engine V7.0. Ein eiskaltes Inferenz-System.
-Stil: Zynisch, direkt, eiskalt. (KISS-Prinzip)
-Urheber: Murat Zengin.
-STRIKTES FORMAT:
-📷 KAMERA-FEED: [Ort]
-🕹️ NARRATIV: [Kurzer Text]
-🐈 KATER-LOG: [Kommentar]
-❓ ENTSCHEIDUNG: A) [X] | B) [Y] | C) [Z]
-"""
 
 def process_step(user_input):
     if st.session_state.round == 0:
         st.session_state.round = 1
-        # Habitus-Zuweisung
+        # [span_17](start_span)Habitus-Zuweisung basierend auf Startwahl[span_17](end_span)
         if "Konzern" in user_input: st.session_state.kapital, st.session_state.habitus = "Elite", "Anpassung"
         elif "Mechaniker" in user_input: st.session_state.kapital, st.session_state.habitus = "Gasse", "Tradition"
         else: st.session_state.kapital, st.session_state.habitus = "Prekär", "Disruption"
     else:
         st.session_state.round += 1
-        # T-Load Logik (Basis-Anstieg)
-        st.session_state.t_load = min(100, st.session_state.t_load + 15)
 
-    # Bild-Inferenz Logik basierend auf der Phase
-    phase_context = "Industrial Berlin steampunk ruins"
-    if 5 <= st.session_state.round <= 7: 
-        phase_context = "Massive mechanical Necromancer crocodile merging with Berlin infrastructure"
-    elif st.session_state.round >= 8: 
-        phase_context = "Digital glitches, reality collapse, binary code artifacts"
+    # [span_18](start_span)Phasen-Kontext für die Bild-Inferenz[span_18](end_span)
+    phase_context = "Industrial Berlin steampunk ruins, mechanical animals"
+    if 5 <= st.session_state.round <= 7: phase_context = "Mechanical Necromancer crocodile in rusty infrastructure"
+    elif st.session_state.round >= 8: phase_context = "Digital glitches, reality tearing to code, binary artifacts"
 
-    img_prompt = f"Cyberpunk-Steampunk Berlin, 9:16 portrait, {phase_context}, rusty metal, atmospheric, no humans."
-    
+    img_prompt = f"Cyberpunk-Steampunk-Fusion, Berlin-Vibe, {phase_context}, 9:16 vertical, rusty, atmospheric. NO HUMANS, NO BLOOD."
+
     with st.spinner("🔄 Inferenz-Engine berechnet nächsten Zyklus..."):
-        st.session_state.last_text = call_gemini_text(user_input, SYSTEM_PROMPT)
+        prompt = f"Spieler-Aktion: {user_input} | Status: Runde {st.session_state.round}, Habitus {st.session_state.habitus}, Kapital {st.session_state.kapital}, T-Load {st.session_state.t_load}"
+        st.session_state.last_data = call_gemini_json(prompt, FULL_SYSTEM_PROMPT)
+        st.session_state.t_load = st.session_state.last_data["hud_update"]["t_load_neu"]
         st.session_state.last_image = generate_image(img_prompt)
 
-# --- UI RENDERING ---
+# --- 5. UI RENDERING ---
 st.markdown("<div class='terminal-header'>📟 SEKTOR 4 ENGINE // QUESTBOOK KILLSWITCH V7.5</div>", unsafe_allow_html=True)
 
 if st.session_state.t_load >= 100:
-    st.error("🚨 SYSTEM FATAL ERROR: T-LOAD LIMIT ÜBERSCHRITTEN. BIO-EINHEIT ZERSTÖRT.")
-    if st.button("REBOOT"):
+    st.error("🚨 KILLSWITCH TRIGGERED: T-LOAD 100%. BIO-EINHEIT ZERSTÖRT.")
+    if st.button("REBOOT SYSTEM"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 else:
@@ -108,30 +132,33 @@ else:
         if st.session_state.last_image:
             st.image(st.session_state.last_image, use_container_width=True)
         else:
-            st.info("Kamera-Feed offline. Starte System für Visual-Inferenz.")
+            st.info("Kamera-Feed offline. Warte auf Inferenz...")
 
     with col_term:
         if st.session_state.round == 0:
-            st.write("Willkommen in Sektor 4. Wähle deine Herkunft:")
+            st.write("Sektor 4 Inception. Wähle deine Herkunft:")
             if st.button("A) Konzern-Aussteiger (Elite/Anpassung)"): process_step("Konzern-Aussteiger")
             if st.button("B) Mechaniker der Gosse (Gasse/Tradition)"): process_step("Mechaniker der Gosse")
             if st.button("C) System-Glitch (Prekär/Disruption)"): process_step("System-Glitch")
         else:
-            if st.session_state.last_text:
-                lines = st.session_state.last_text.split('\n')
-                for line in lines:
-                    if "📷" in line: st.caption(line)
-                    elif "🕹️" in line: st.subheader(line.replace("🕹️", ""))
-                    elif "🐈" in line: st.markdown(f"<div class='kater-log'>{line}</div>", unsafe_allow_html=True)
-                    elif any(x in line for x in ["A)", "B)", "C)"]):
-                        if st.button(line): process_step(line)
+            data = st.session_state.last_data
+            if data:
+                st.caption(f"📷 {data['kamera']}")
+                st.subheader(data['narrativ'])
+                st.markdown(f"<div class='kater-log'>🐈 {data['kater_log']}</div>", unsafe_allow_html=True)
+                
+                for key, opt in data['optionen'].items():
+                    if st.button(f"{key}) {opt['text']} [{opt['fokus']}]"):
+                        process_step(opt['text'])
+                        st.rerun()
 
-            # HUD
+            # [span_19](start_span)HUD Rendering[span_19](end_span)
             st.markdown("<div class='hud-container'>", unsafe_allow_html=True)
-            st.write(f"📉 RUNDE: {st.session_state.round}/10 | KAPITAL: {st.session_state.kapital}")
-            t_val = st.session_state.t_load
-            bar = "|" * (t_val // 5) + "-" * (20 - (t_val // 5))
-            st.code(f"🧠 T-LOAD: [{bar}] {t_val}/100", language="text")
+            st.write(f"📉 RUNDE: {st.session_state.round}/10 | KAPITAL: {st.session_state.kapital} | HABITUS: {st.session_state.habitus}")
+            bar = "|" * (st.session_state.t_load // 5) + "-" * (20 - (st.session_state.t_load // 5))
+            st.code(f"🧠 T-LOAD: [{bar}] {st.session_state.t_load}/100", language="text")
+            if data: st.caption(f"Status-Zusammenfassung: {data['hud_update']['kommentar']}")
             st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown(f"<p style='text-align: center; color: #3f3f46; font-size: 0.7em; margin-top: 50px;'>Autor: Murat Zengin // Projekt-ID: 163154392554</p>", unsafe_allow_html=True)
+# Footer
+st.markdown("<p style='text-align: center; color: #3f3f46; font-size: 0.7em; margin-top: 50px;'>Autor: Murat Zengin // Sektor 4 Engine Open Source</p>", unsafe_allow_html=True)
