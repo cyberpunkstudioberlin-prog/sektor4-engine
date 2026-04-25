@@ -58,7 +58,7 @@ Struktur:
 def call_gemini_json(prompt, system_instruction):
     try:
         response = client.models.generate_content(
-            model='gemini-1.5-flash-8b', # Exakter Name für das kostenlose, schnelle Modell
+            model='gemini-1.5-flash-002', # Exakter, voll qualifizierter Name
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
