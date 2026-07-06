@@ -12,12 +12,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Kaltes Cyberpunk/Steampunk CSS
+# Kaltes Cyberpunk/Steampunk CSS & ASCII Styling
 st.markdown("""
 <style>
     .stApp {
         background-color: #050505;
-        color: #10b981; /* Emerald */
+        color: #10b981; 
     }
     .hud-box {
         background-color: #0d0d10;
@@ -28,7 +28,7 @@ st.markdown("""
         font-family: monospace;
     }
     .hud-title {
-        color: #eab308; /* Amber */
+        color: #eab308;
         font-weight: bold;
         font-size: 1.2rem;
         margin-bottom: 10px;
@@ -42,7 +42,7 @@ st.markdown("""
     }
     .kater-log {
         background-color: #18181b;
-        border-left: 4px solid #d946ef; /* Fuchsia */
+        border-left: 4px solid #d946ef;
         padding: 15px;
         font-style: italic;
         color: #e879f9;
@@ -59,6 +59,21 @@ st.markdown("""
         font-size: 0.85em;
         margin-bottom: 15px;
     }
+    .ascii-art {
+        background-color: #000000;
+        color: #10b981;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.8rem;
+        line-height: 1.2;
+        padding: 20px;
+        border: 1px solid #10b981;
+        border-radius: 5px;
+        overflow-x: auto;
+        white-space: pre;
+        text-align: center;
+        margin-bottom: 20px;
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.2) inset;
+    }
     .stButton>button {
         width: 100%;
         background-color: #000;
@@ -74,7 +89,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
 
 # --- 2. SYSTEM PROMPT ---
 SYSTEM_PROMPT = """
@@ -103,10 +117,6 @@ GLOBAL PROHIBITIONS:
 - NO bullet points in Vector options.
 - NO looping: Threats and locations must progress procedurally.
 
-SPECIAL TRIGGERS (IMAGE-FREEZE & OVERRIDE):
-- If input contains "[IMAGE-PROMPT]" or "RENDER-CODE" -> Stop immediately. Output exactly: "🤖 SYSTEM-STATUS: Visueller Feed durch Sentinel-Routinen geparst. Engine im Freeze-Modus. Wähle A, B oder C."
-- If input contains metadata questions or out-of-character nonsense -> Stop immediately. Output exactly: "⚠️ SYSTEM-FEHLER: Unbekannter Vektor durch Master Index blockiert. Wähle A, B oder C."
-
 STRICT 6-STEP OUTPUT SEQUENCE (EXECUTE EVERY TURN IN GERMAN):
 
 **0. 🧮 [ENGINE-LOGIK]**
@@ -118,9 +128,8 @@ Spam-Check: [Same letter 3x in a row? Ja/Nein -> +0 or +15 T-Load & +20% Resonan
 T-Load Berechnung: [Old Value] + [Base 5] + [Penalties] = [New Value]
 Resonanz Berechnung: [Old Value] + [Base 5] + [Penalties] = [New Value]
 
-**1. 📡 [RENDER-CODE]**
-Generate a Bash code block for the visual API.
-Syntax: [IMAGE-PROMPT]: 9:16 aspect ratio, cinematic dark cyberpunk steampunk factory, old rusted copper pipes, atmospheric Berlin underground style, photorealistic, [CURRENT ROOM + Mutator Element], [CURRENT THREAT], [VISUAL PLAYER STATE], detailed textures, dramatic industrial lighting
+**1. 📡 [ASCII-FEED]**
+Generate a highly detailed, context-sensitive ASCII art representation (approx. 10-15 lines) of the [CURRENT ROOM + Mutator Element] and [CURRENT THREAT]. Wrap the ASCII art strictly in a standard markdown code block using ```ascii .
 
 **2. 🩸 Szenerie & Gefahr:**
 Write this in German. Visceral worldbuilding. Tie the danger logically to the environment and include the active Mutator Icon (❄️ Kryo, 🌊 Flut, 🔥 Rost, 🔣 Code).
@@ -141,7 +150,6 @@ C) [Dynamic context-sensitive action] (🪙 Kapital: Prekär | 🎭 Habitus: Tra
 """
 
 # --- 3. INIT GEMINI CLIENT ---
-# Streamlit Secrets should contain GEMINI_API_KEY
 api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY"))
 if not api_key:
     st.error("⚠️ SYSTEM-FEHLER: GEMINI_API_KEY fehlt in st.secrets.")
@@ -165,7 +173,6 @@ if "pending_prompt" not in st.session_state:
 
 # --- 5. HELPER FUNKTIONEN ---
 def parse_hud_from_text(text):
-    """Extrahiert HUD-Werte aus der KI-Antwort per Regex"""
     try:
         runde = re.search(r'Runde:\s*(\d+/\d+)', text, re.IGNORECASE)
         kapital = re.search(r'Kapital:\s*([^|\n]+)', text, re.IGNORECASE)
@@ -179,33 +186,38 @@ def parse_hud_from_text(text):
         if tload: st.session_state.hud["tload"] = tload.group(1).strip()
         if resonanz: st.session_state.hud["resonanz"] = resonanz.group(1).strip()
     except Exception as e:
-        print(f"HUD Parse Error: {e}")
-
-def extract_image_prompt(text):
-    match = re.search(r'\[IMAGE-PROMPT\]:\s*([^\n]+)', text, re.IGNORECASE)
-    return match.group(1).strip() if match else None
+        pass
 
 def format_ai_response(text):
-    """Formatiert den Text für Streamlit optisch auf (CSS Klassen)"""
+    # Extrahiere ASCII-Art aus dem Markdown-Block
+    ascii_match = re.search(r'```ascii\n(.*?)\n```', text, re.DOTALL)
+    ascii_art = ascii_match.group(1) if ascii_match else None
+    
+    # Entferne den ASCII-Block aus dem restlichen Text für sauberes Parsing
+    if ascii_match:
+        text = text.replace(ascii_match.group(0), '')
+
     blocks = text.split('\n\n')
+    
     for block in blocks:
         if '🧮 [ENGINE-LOGIK]' in block:
             st.markdown(f"<div class='engine-log'>{block.replace('**0. 🧮 [ENGINE-LOGIK]**', '🧮 ENGINE-LOGIK').strip()}</div>", unsafe_allow_html=True)
-        elif '📡 [RENDER-CODE]' in block:
-            st.caption(f"📡 *{block.strip()}*")
+        elif '📡 [ASCII-FEED]' in block:
+            st.caption("📡 *Kamera-Feed offline. Wandle rohe Sensordaten in optische Matrix um...*")
+            if ascii_art:
+                st.markdown(f"<div class='ascii-art'>{ascii_art}</div>", unsafe_allow_html=True)
         elif '🩸 Szenerie & Gefahr:' in block:
             st.markdown(f"### 🩸 Szenerie & Gefahr\n{block.replace('**2. 🩸 Szenerie & Gefahr:**', '').strip()}")
         elif '🐈‍⬛ Kater-Log:' in block:
             st.markdown(f"<div class='kater-log'>🐈‍⬛ {block.replace('**3. 🐈‍⬛ Kater-Log:**', '').strip()}</div>", unsafe_allow_html=True)
         elif '⚡ Vektor-Auswahl' in block:
             st.markdown(f"**⚡ Vektoren:**\n{block.replace('**4. ⚡ Vektor-Auswahl (Format exactly as shown, no bullet points, in German):**', '').strip()}")
-        elif '=== S-4 HUD ===' not in block:
+        elif '=== S-4 HUD ===' not in block and block.strip() != '':
              st.markdown(block)
 
 # --- 6. HAUPT-INTERFACE ---
 st.title("📟 SEKTOR 4 ENGINE")
 
-# HUD Render
 with st.container():
     st.markdown(f"""
     <div class="hud-box">
@@ -222,65 +234,41 @@ with st.container():
     </div>
     """, unsafe_allow_html=True)
 
-# Chat History anzeigen (ohne die System-Prompts selbst)
 for entry in st.session_state.history:
     if entry["role"] == "user":
         st.info(f"**DU:** {entry['content']}")
     else:
-        if "image_bytes" in entry and entry["image_bytes"]:
-            st.image(entry["image_bytes"], use_container_width=True, caption="📸 Visueller Sentinel Feed")
         format_ai_response(entry['content'])
         st.divider()
 
 # --- 7. LOGIK VERARBEITUNG ---
 if st.session_state.pending_prompt:
     prompt = st.session_state.pending_prompt
-    st.session_state.pending_prompt = None # Reset
+    st.session_state.pending_prompt = None 
     
     with st.spinner("🤖 Engine berechnet Vektoren..."):
         try:
-            # Baue den Kontext für das Modell (inkl. History)
-            history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-6:]]) # Behalte letzte 6 Turns
+            history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-6:]])
             full_prompt = f"Bisheriger Verlauf:\n{history_text}\n\nNeuer Input: {prompt}"
 
             response = client.models.generate_content(
-                model='gemini-2.5-flash', # Zuverlässiges Modell für Text & Logik
+                model='gemini-2.5-flash',
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
-                    temperature=0.4 # Etwas kreativer, aber hält sich strikt an Regeln
+                    temperature=0.4
                 )
             )
             
             ai_text = response.text
             parse_hud_from_text(ai_text)
             
-            # Bild generieren (optional, falls API Key Bild-Rechte hat)
-            image_bytes = None
-            img_prompt = extract_image_prompt(ai_text)
-            if img_prompt:
-                try:
-                    img_response = client.models.generate_images(
-                        model='imagen-3.0-generate-001',
-                        prompt=img_prompt,
-                        config=types.GenerateImagesConfig(
-                            number_of_images=1,
-                            output_mime_type="image/jpeg",
-                            aspect_ratio="16:9" # Streamlit mag Landscape oft lieber, anpassbar auf 9:16
-                        )
-                    )
-                    image_bytes = img_response.generated_images[0].image.image_bytes
-                except Exception as img_err:
-                    st.toast(f"Bild-Feed offline: {img_err}", icon="⚠️")
-
-            # Speichern
             if prompt != "SYSTEM BOOT: Starte Runde 0. Wähle zufällig einen Mutator. Präsentiere Charaktererschaffungs-Szenario.":
                 st.session_state.history.append({"role": "user", "content": prompt})
             
             st.session_state.history.append({
                 "role": "system", 
-                "content": ai_text,
-                "image_bytes": image_bytes
+                "content": ai_text
             })
             
             st.rerun()
@@ -301,4 +289,3 @@ with col2:
     if st.button("Vektor [ B ]"): set_choice("B")
 with col3:
     if st.button("Vektor [ C ]"): set_choice("C")
-
