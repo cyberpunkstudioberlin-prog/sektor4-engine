@@ -26,8 +26,8 @@ st.markdown("""
 
 # API-Client Setup
 if "GEMINI_API_KEY" in st.secrets:
-    os.environ["GOOGLE_API_KEY"] = st.secrets["GEMINI_API_KEY"]
-    client = genai.Client()
+    # Saubere Übergabe des Keys an das neue SDK
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 else:
     st.error("🚨 API-KEY FEHLT: Bitte in Streamlit Cloud Secrets 'GEMINI_API_KEY' eintragen.")
     st.stop()
@@ -58,11 +58,12 @@ Struktur:
 def call_gemini_json(prompt, system_instruction):
     try:
         response = client.models.generate_content(
-            model='gemini-1.5-flash-002', # Exakter, voll qualifizierter Name
+            model='gemini-1.5-flash', # KORREKTUR: Stabiles Modell für fehlerfreie Inferenz
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 response_mime_type="application/json",
+                temperature=0.1 # Stellt sicher, dass das System analytisch und weniger "zufällig" agiert
             )
         )
         return json.loads(response.text)
@@ -78,7 +79,7 @@ def call_gemini_json(prompt, system_instruction):
 def generate_image(prompt):
     try:
         result = client.models.generate_images(
-            model='imagen-3.0-generate-002',
+            model='imagen-3.0-generate-001', # KORREKTUR: Stabiles Standard-Modell für Imagen
             prompt=prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,
@@ -88,7 +89,8 @@ def generate_image(prompt):
         if result.generated_images:
             image_bytes = result.generated_images[0].image.image_bytes
             return f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"
-    except:
+    except Exception:
+        # Fängt Fehler ab, falls die Bildgenerierung ausfällt, damit das Spiel weiterläuft
         return None
 
 # --- 4. ENGINE STATE MANAGEMENT ---
@@ -101,9 +103,12 @@ if 'round' not in st.session_state:
 def process_step(user_input):
     if st.session_state.round == 0:
         st.session_state.round = 1
-        if "Konzern" in user_input: st.session_state.kapital, st.session_state.habitus = "Elite", "Anpassung"
-        elif "Mechaniker" in user_input: st.session_state.kapital, st.session_state.habitus = "Gasse", "Tradition"
-        else: st.session_state.kapital, st.session_state.habitus = "Prekär", "Disruption"
+        if "Konzern" in user_input: 
+            st.session_state.kapital, st.session_state.habitus = "Elite", "Anpassung"
+        elif "Mechaniker" in user_input: 
+            st.session_state.kapital, st.session_state.habitus = "Gasse", "Tradition"
+        else: 
+            st.session_state.kapital, st.session_state.habitus = "Prekär", "Disruption"
     else:
         st.session_state.round += 1
 
@@ -112,7 +117,7 @@ def process_step(user_input):
     with st.spinner("🔄 Inferenz-Engine berechnet nächsten Zyklus..."):
         prompt = f"Spieler-Aktion: {user_input} | Status: Runde {st.session_state.round}, Habitus {st.session_state.habitus}, Kapital {st.session_state.kapital}, T-Load {st.session_state.t_load}"
         st.session_state.last_data = call_gemini_json(prompt, FULL_SYSTEM_PROMPT)
-        st.session_state.t_load = st.session_state.last_data["hud_update"]["t_load_neu"]
+        st.session_state.t_load = st.session_state.last_data.get("hud_update", {}).get("t_load_neu", st.session_state.t_load)
         st.session_state.last_image = generate_image(img_prompt)
 
 # --- 5. UI RENDERING ---
@@ -121,14 +126,16 @@ st.markdown("<div class='terminal-header'>📟 SEKTOR 4 ENGINE // QUESTBOOK KILL
 if st.session_state.t_load >= 100:
     st.error("🚨 KILLSWITCH TRIGGERED: T-LOAD 100%. BIO-EINHEIT ZERSTÖRT.")
     if st.button("REBOOT SYSTEM"):
-        for key in list(st.session_state.keys()): del st.session_state[key]
+        for key in list(st.session_state.keys()): 
+            del st.session_state[key]
         st.rerun()
 else:
     col_vis, col_term = st.columns([1, 1.2])
 
     with col_vis:
         if st.session_state.last_image:
-            st.image(st.session_state.last_image, width="stretch")
+            # use_container_width ist der aktuelle Streamlit-Standard
+            st.image(st.session_state.last_image, use_container_width=True) 
         else:
             st.info("Kamera-Feed offline. Warte auf Inferenz...")
 
@@ -141,20 +148,27 @@ else:
         else:
             data = st.session_state.last_data
             if data:
-                st.caption(f"📷 {data['kamera']}")
-                st.subheader(data['narrativ'])
-                st.markdown(f"<div class='kater-log'>🐈 {data['kater_log']}</div>", unsafe_allow_html=True)
+                # Sichere Abfrage mit .get() falls das Modell von der Struktur abweicht
+                st.caption(f"📷 {data.get('kamera', 'Feed offline')}")
+                st.subheader(data.get('narrativ', '...'))
+                st.markdown(f"<div class='kater-log'>🐈‍⬛ {data.get('kater_log', '...')}</div>", unsafe_allow_html=True)
                 
-                for key, opt in data['optionen'].items():
-                    if st.button(f"{key}) {opt['text']} [{opt['fokus']}]"):
-                        process_step(opt['text'])
-                        st.rerun()
+                if 'optionen' in data:
+                    for key, opt in data['optionen'].items():
+                        if st.button(f"{key}) {opt.get('text', 'Unbekannter Vektor')} [{opt.get('fokus', '???')}]"):
+                            process_step(opt.get('text', ''))
+                            st.rerun()
 
             st.markdown("<div class='hud-container'>", unsafe_allow_html=True)
             st.write(f"📉 RUNDE: {st.session_state.round}/10 | KAPITAL: {st.session_state.kapital} | HABITUS: {st.session_state.habitus}")
-            bar = "|" * (st.session_state.t_load // 5) + "-" * (20 - (st.session_state.t_load // 5))
+            # Verhindere Fehler, falls T-Load über 100 geht vor dem Reboot-Screen
+            display_tload = min(st.session_state.t_load, 100) 
+            bar = "|" * (display_tload // 5) + "-" * (20 - (display_tload // 5))
             st.code(f"🧠 T-LOAD: [{bar}] {st.session_state.t_load}/100", language="text")
-            if data: st.caption(f"Status-Zusammenfassung: {data['hud_update']['kommentar']}")
+            if data and 'hud_update' in data: 
+                st.caption(f"Status-Zusammenfassung: {data['hud_update'].get('kommentar', '')}")
             st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("<p style='text-align: center; color: #3f3f46; font-size: 0.7em; margin-top: 50px;'>Autor: Murat Zengin // Sektor 4 Engine</p>", unsafe_allow_html=True)
+# --- FOOTER ---
+st.markdown("<p style='text-align: center; color: #3f3f46; font-size: 0.7em; margin-top: 50px;'>Autor: Murat Zengin // Sektor 4 Engine (Open Source)</p>", unsafe_allow_html=True)
+        
