@@ -24,6 +24,8 @@ st.markdown("""
     .ascii-art { background-color: #000000; color: #10b981; font-family: 'Courier New', Courier, monospace; font-size: 0.8rem; line-height: 1.2; padding: 20px; border: 1px solid #10b981; border-radius: 5px; overflow-x: auto; white-space: pre; text-align: center; margin-bottom: 20px; box-shadow: 0 0 10px rgba(16, 185, 129, 0.2) inset; }
     .stButton>button { width: 100%; background-color: #000; color: #a1a1aa; border: 2px solid #27272a; text-transform: uppercase; font-weight: bold; transition: all 0.3s; }
     .stButton>button:hover { border-color: #10b981; color: #10b981; }
+    .game-over { background-color: #7f1d1d; color: #fca5a5; padding: 20px; border: 2px solid #ef4444; border-radius: 8px; text-align: center; font-weight: bold; margin-top: 20px; }
+    .game-win { background-color: #064e3b; color: #6ee7b7; padding: 20px; border: 2px solid #10b981; border-radius: 8px; text-align: center; font-weight: bold; margin-top: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -125,20 +127,24 @@ def calculate_turn(choice):
             s["t_load"] += spam_pen_t
             s["resonanz"] += 20
 
-    if s["t_load"] > 100: s["t_load"] = 100
+    if s["t_load"] >= 100: s["t_load"] = 100
     if s["resonanz"] > 100: s["resonanz"] = 100
 
     return {"spam_pen": spam_pen_t, "diss_pen": diss_pen, "old_t": old_t, "old_r": old_r}
 
-# STORY-INJECTOR FÜR GEGNER-PROGRESSION
-def get_threat_context(runde):
+def get_threat_context(runde, t_load):
+    context = ""
     if runde in [1, 2, 3, 4]:
-        return "FEIND-VORGABE: Lass den Spieler auf 'Schmelzer-Automaten' oder 'Rixdorf-Inquisitoren' treffen. Rohe, mechanische Gegner."
+        context = "FEIND-VORGABE: Lass den Spieler auf 'Schmelzer-Automaten' oder 'Rixdorf-Inquisitoren' treffen. Rohe, mechanische Gegner."
     elif runde in [5, 6, 7]:
-        return "FEIND-VORGABE (BOSS-PHASE): Das gigantische 'Necromancer-Krokodil' greift an! Es ist eine schwere mechanische Bedrohung und beschwört 'Untote Korrumpierte Mechanische Plüsch-Bären' als Minions."
+        context = "FEIND-VORGABE (BOSS-PHASE): Das gigantische 'Necromancer-Krokodil' greift an! Es ist eine schwere mechanische Bedrohung und beschwört 'Untote Korrumpierte Mechanische Plüsch-Bären'."
     elif runde in [8, 9, 10]:
-        return "FEIND-VORGABE (SYSTEM-KOLLAPS): Sektor 4 dekonstruiert sich in digitale Korruption. Die Realität reißt auf, rote Matrix-Streams und Neon-Glitches erscheinen. Die Umgebung selbst wird zur tödlichen Bedrohung."
-    return ""
+        context = "FEIND-VORGABE (SYSTEM-KOLLAPS): Sektor 4 dekonstruiert sich in digitale Korruption. Rote Matrix-Streams und Neon-Glitches zerreißen die Realität."
+    
+    if t_load >= 75:
+        context += " [SYSTEM-ZUSTAND: Der T-Load ist über 75. Der Avatar ist kritisch verwundet. Beschreibe Schmerzen und Systemversagen!]"
+        
+    return context
 
 # --- 6. RENDER HELPER ---
 def format_ai_response(text):
@@ -163,11 +169,16 @@ def format_ai_response(text):
         elif '=== S-4 HUD ===' not in block and block.strip() != '':
              st.markdown(block)
 
+def reset_game():
+    st.session_state.clear()
+    st.rerun()
+
 # --- 7. MAIN UI ---
 st.title("📟 SEKTOR 4 ENGINE")
 s = st.session_state.state
 
 with st.container():
+    t_color = "#ef4444" if s['t_load'] >= 75 else "#10b981"
     st.markdown(f"""
     <div class="hud-box">
         <div class="hud-title">⚙️ MASTER INDEX HUD</div>
@@ -175,7 +186,7 @@ with st.container():
         <div class="hud-stat"><span>🪙 KAPITAL:</span> <span style="color:#a1a1aa">{s['kapital']}</span></div>
         <div class="hud-stat"><span>🎭 HABITUS:</span> <span style="color:#a1a1aa">{s['habitus']}</span></div>
         <div class="hud-stat" style="margin-top:10px; border-top:1px dashed #065f46; padding-top:5px;">
-            <span style="color:#ef4444">🧠 T-LOAD:</span> <span style="color:#ef4444">{s['t_load']}/100</span>
+            <span style="color:{t_color}">🧠 T-LOAD:</span> <span style="color:{t_color}">{s['t_load']}/100</span>
         </div>
         <div class="hud-stat">
             <span style="color:#06b6d4">📻 RESONANZ:</span> <span style="color:#06b6d4">{s['resonanz']}%</span>
@@ -200,7 +211,7 @@ if st.session_state.pending_prompt:
             prompt = f"[SYSTEM-OVERRIDE] Starte RUNDE 0. Mutator: {s['mutator']}. Setze T-Load=10, Resonanz=50. Erstelle das Boot-Szenario zur Charakterwahl (A, B oder C)."
         else:
             calc_data = calculate_turn(raw_choice)
-            threat_context = get_threat_context(s["runde"])
+            threat_context = get_threat_context(s["runde"], s["t_load"])
             
             prompt = f"""[SYSTEM-OVERRIDE] Spieler wählt {raw_choice}. 
 EXAKTE WERTE FÜR STEP 0 & HUD:
@@ -213,38 +224,60 @@ Resonanz: {calc_data['old_r']} + 5 + Strafen = {s['resonanz']}
 
 [STORY-INJECT]: {threat_context}
 
-Schreibe nun die Storyline für Runde {s['runde']} basierend auf diesen Werten. Integriere zwingend das [STORY-INJECT] in Schritt 2."""
+Schreibe nun die Storyline basierend auf diesen Werten. Integriere zwingend das [STORY-INJECT] in Schritt 2."""
 
-        try:
-            history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-4:]])
-            full_prompt = f"History:\n{history_text}\n\nNeuer Input:\n{prompt}"
+        # Wenn Game Over (Killswitch) erreicht ist, überspringen wir den API-Call
+        if s["t_load"] >= 100:
+            s["t_load"] = 100
+        else:
+            try:
+                history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-4:]])
+                full_prompt = f"History:\n{history_text}\n\nNeuer Input:\n{prompt}"
 
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=full_prompt,
-                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.4)
-            )
-            
-            if raw_choice != "SYSTEM BOOT":
-                st.session_state.history.append({"role": "user", "content": f"Vektor {raw_choice} gewählt."})
-            
-            st.session_state.history.append({"role": "system", "content": response.text})
-            st.rerun()
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.4)
+                )
+                
+                if raw_choice != "SYSTEM BOOT":
+                    st.session_state.history.append({"role": "user", "content": f"Vektor {raw_choice} gewählt."})
+                
+                st.session_state.history.append({"role": "system", "content": response.text})
+                st.rerun()
 
-        except Exception as e:
-            st.error(f"🛑 MATRIX-FEHLER: {e}")
+            except Exception as e:
+                st.error(f"🛑 MATRIX-FEHLER: {e}")
 
-# --- 9. STEUERUNG ---
-st.write("### ⚡ DEIN VEKTOR")
-col1, col2, col3 = st.columns(3)
+# --- 9. STEUERUNG & END CONDITIONS ---
+if s["t_load"] >= 100:
+    st.markdown("""
+    <div class="game-over">
+        💀 SYSTEM KILLSWITCH AKTIVIERT<br><br>
+        T-Load bei 100%. Bewusstsein fragmentiert. Die Sentinel-Routinen haben dich gelöscht. Game Over.
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("🔄 NEUER VERSUCH", on_click=reset_game): pass
 
-def set_choice(choice):
-    st.session_state.pending_prompt = choice
+elif s["runde"] >= 10 and s["t_load"] < 100:
+    st.markdown("""
+    <div class="game-win">
+        System-Meldung: Herzlichen Glückwunsch zum Überleben von Kapitel eins – deine Biografie wurde erfolgreich für den Übergang in die Red-Room-Matrix validiert. Die Illusion von Sektor 4 kollabiert zu Datenstaub. Die Feline Anomalie nickt dir knapp zu, bevor sie in den Code-Schatten des Red Rooms verschwindet. // Autor der Open Source Akte: Murat Zengin
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("🔄 NEUES SPIEL STARTEN", on_click=reset_game): pass
 
-with col1:
-    if st.button("Vektor [ A ]"): set_choice("A")
-with col2:
-    if st.button("Vektor [ B ]"): set_choice("B")
-with col3:
-    if st.button("Vektor [ C ]"): set_choice("C")
-                                                                  
+else:
+    st.write("### ⚡ DEIN VEKTOR")
+    col1, col2, col3 = st.columns(3)
+
+    def set_choice(choice):
+        st.session_state.pending_prompt = choice
+
+    with col1:
+        if st.button("Vektor [ A ]"): set_choice("A")
+    with col2:
+        if st.button("Vektor [ B ]"): set_choice("B")
+    with col3:
+        if st.button("Vektor [ C ]"): set_choice("C")
+    
