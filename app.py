@@ -46,7 +46,7 @@ Print the exact calculation values provided in the [SYSTEM-OVERRIDE]. Do not cal
 Context-sensitive ASCII art of [CURRENT ROOM] and [THREAT] inside a markdown ```ascii block.
 
 **2. 🩸 Szenerie & Gefahr:**
-Write this in German. Incorporate Mutator, Threat, and Room.
+Write this in German. Incorporate Mutator, Threat, and Room. ALWAYS integrate the [STORY-INJECT] provided in the prompt.
 
 **3. 🐈‍⬛ Kater-Log:**
 Max 2 sentences. Cynical Feline Anomalie advice/reaction.
@@ -89,7 +89,6 @@ if "pending_prompt" not in st.session_state:
 def calculate_turn(choice):
     s = st.session_state.state
     
-    # Runde 0: Charaktererschaffung
     if s["runde"] == 0:
         if choice == 'A':
             s["kapital"] = "Gasse"
@@ -104,26 +103,21 @@ def calculate_turn(choice):
         s["history_choices"].append(choice)
         return {"spam_pen": 0, "diss_pen": 0, "old_t": 10, "old_r": 50}
 
-    # Ab Runde 1: Echtes Gameplay
     old_t = s["t_load"]
     old_r = s["resonanz"]
-    
     s["runde"] += 1
     s["history_choices"].append(choice)
     
-    # Base Increase
     base_increase = 5
     s["t_load"] += base_increase
     s["resonanz"] += base_increase
     
-    # Dissonanz Check
     diss_pen = 0
     choice_habitus_map = {'A': 'Disruption', 'B': 'Anpassung', 'C': 'Tradition'}
     if choice_habitus_map[choice] != s["habitus"]:
         diss_pen = 5
         s["t_load"] += diss_pen
 
-    # Spam Check (3x gleiche Wahl)
     spam_pen_t = 0
     if len(s["history_choices"]) >= 3:
         if s["history_choices"][-1] == s["history_choices"][-2] == s["history_choices"][-3]:
@@ -131,11 +125,20 @@ def calculate_turn(choice):
             s["t_load"] += spam_pen_t
             s["resonanz"] += 20
 
-    # Caps
     if s["t_load"] > 100: s["t_load"] = 100
     if s["resonanz"] > 100: s["resonanz"] = 100
 
     return {"spam_pen": spam_pen_t, "diss_pen": diss_pen, "old_t": old_t, "old_r": old_r}
+
+# STORY-INJECTOR FÜR GEGNER-PROGRESSION
+def get_threat_context(runde):
+    if runde in [1, 2, 3, 4]:
+        return "FEIND-VORGABE: Lass den Spieler auf 'Schmelzer-Automaten' oder 'Rixdorf-Inquisitoren' treffen. Rohe, mechanische Gegner."
+    elif runde in [5, 6, 7]:
+        return "FEIND-VORGABE (BOSS-PHASE): Das gigantische 'Necromancer-Krokodil' greift an! Es ist eine schwere mechanische Bedrohung und beschwört 'Untote Korrumpierte Mechanische Plüsch-Bären' als Minions."
+    elif runde in [8, 9, 10]:
+        return "FEIND-VORGABE (SYSTEM-KOLLAPS): Sektor 4 dekonstruiert sich in digitale Korruption. Die Realität reißt auf, rote Matrix-Streams und Neon-Glitches erscheinen. Die Umgebung selbst wird zur tödlichen Bedrohung."
+    return ""
 
 # --- 6. RENDER HELPER ---
 def format_ai_response(text):
@@ -197,6 +200,8 @@ if st.session_state.pending_prompt:
             prompt = f"[SYSTEM-OVERRIDE] Starte RUNDE 0. Mutator: {s['mutator']}. Setze T-Load=10, Resonanz=50. Erstelle das Boot-Szenario zur Charakterwahl (A, B oder C)."
         else:
             calc_data = calculate_turn(raw_choice)
+            threat_context = get_threat_context(s["runde"])
+            
             prompt = f"""[SYSTEM-OVERRIDE] Spieler wählt {raw_choice}. 
 EXAKTE WERTE FÜR STEP 0 & HUD:
 Neue Runde: {s['runde']}/10
@@ -205,10 +210,12 @@ Dissonanz-Strafe T-Load: +{calc_data['diss_pen']}
 Spam-Strafe T-Load: +{calc_data['spam_pen']}
 T-Load: {calc_data['old_t']} + 5 + Strafen = {s['t_load']}
 Resonanz: {calc_data['old_r']} + 5 + Strafen = {s['resonanz']}
-Schreibe nun die Storyline für Runde {s['runde']} basierend auf diesen Werten."""
+
+[STORY-INJECT]: {threat_context}
+
+Schreibe nun die Storyline für Runde {s['runde']} basierend auf diesen Werten. Integriere zwingend das [STORY-INJECT] in Schritt 2."""
 
         try:
-            # Context History (letzte 4 Einträge)
             history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-4:]])
             full_prompt = f"History:\n{history_text}\n\nNeuer Input:\n{prompt}"
 
@@ -240,4 +247,4 @@ with col2:
     if st.button("Vektor [ B ]"): set_choice("B")
 with col3:
     if st.button("Vektor [ C ]"): set_choice("C")
-                
+                                                                  
