@@ -58,40 +58,16 @@ Struktur:
 def call_gemini_json(prompt, system_instruction):
     try:
         response = client.models.generate_content(
-            model='gemini-1.5-flash', # KORREKTUR: Stabiles Modell für fehlerfreie Inferenz
+            model='gemini-2.5-flash', # KORREKTUR: Hier steht jetzt die 2.5er Version
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 response_mime_type="application/json",
-                temperature=0.1 # Stellt sicher, dass das System analytisch und weniger "zufällig" agiert
+                temperature=0.1
             )
         )
         return json.loads(response.text)
-    except Exception as e:
-        return {
-            "kamera": f"🚨 DIAGNOSE: {str(e)}", 
-            "narrativ": "Die Matrix blockiert den Zugriff. Prüfe den Fehler-Code im Kamera-Feed.", 
-            "kater_log": "'Das System wehrt sich gegen die Inferenz.'",
-            "optionen": {"A": {"text": "Neu kalibrieren", "fokus": "System"}},
-            "hud_update": {"t_load_neu": st.session_state.t_load, "kommentar": "Fehler-Modus"}
-        }
 
-def generate_image(prompt):
-    try:
-        result = client.models.generate_images(
-            model='imagen-3.0-generate-001', # KORREKTUR: Stabiles Standard-Modell für Imagen
-            prompt=prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="9:16"
-            )
-        )
-        if result.generated_images:
-            image_bytes = result.generated_images[0].image.image_bytes
-            return f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"
-    except Exception:
-        # Fängt Fehler ab, falls die Bildgenerierung ausfällt, damit das Spiel weiterläuft
-        return None
 
 # --- 4. ENGINE STATE MANAGEMENT ---
 if 'round' not in st.session_state:
