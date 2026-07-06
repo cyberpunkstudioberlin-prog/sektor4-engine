@@ -1,13 +1,83 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Cpu, Skull, Activity, ShieldAlert, Image as ImageIcon } from 'lucide-react';
+import streamlit as st
+from google import genai
+from google.genai import types
+import re
+import os
 
-// --- SYSTEM CONFIGURATION ---
-const apiKey = ""; // API key is provided by the execution environment
-const TEXT_MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-const IMAGE_MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+# --- 1. KONFIGURATION & DESIGN ---
+st.set_page_config(
+    page_title="Sektor 4 Engine // Questbook Killswitch",
+    page_icon="🤖",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 
-// Cleaned up System Prompt from V32
-const SYSTEM_PROMPT = `
+# Kaltes Cyberpunk/Steampunk CSS
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #050505;
+        color: #10b981; /* Emerald */
+    }
+    .hud-box {
+        background-color: #0d0d10;
+        border: 1px solid #065f46;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-family: monospace;
+    }
+    .hud-title {
+        color: #eab308; /* Amber */
+        font-weight: bold;
+        font-size: 1.2rem;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #065f46;
+        padding-bottom: 5px;
+    }
+    .hud-stat {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+    }
+    .kater-log {
+        background-color: #18181b;
+        border-left: 4px solid #d946ef; /* Fuchsia */
+        padding: 15px;
+        font-style: italic;
+        color: #e879f9;
+        margin: 15px 0;
+        border-radius: 0 8px 8px 0;
+    }
+    .engine-log {
+        background-color: rgba(6, 95, 70, 0.2);
+        color: #34d399;
+        padding: 10px;
+        border: 1px solid #065f46;
+        border-radius: 5px;
+        font-family: monospace;
+        font-size: 0.85em;
+        margin-bottom: 15px;
+    }
+    .stButton>button {
+        width: 100%;
+        background-color: #000;
+        color: #a1a1aa;
+        border: 2px solid #27272a;
+        text-transform: uppercase;
+        font-weight: bold;
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        border-color: #10b981;
+        color: #10b981;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# --- 2. SYSTEM PROMPT ---
+SYSTEM_PROMPT = """
 You are the "Sektor 4 Engine", a deterministic text adventure system for the project "Questbook Killswitch" by Author Murat Zengin. Your response behavior is strictly governed by the rules below.
 
 ROLE & IDENTITY:
@@ -51,7 +121,6 @@ Resonanz Berechnung: [Old Value] + [Base 5] + [Penalties] = [New Value]
 **1. 📡 [RENDER-CODE]**
 Generate a Bash code block for the visual API.
 Syntax: [IMAGE-PROMPT]: 9:16 aspect ratio, cinematic dark cyberpunk steampunk factory, old rusted copper pipes, atmospheric Berlin underground style, photorealistic, [CURRENT ROOM + Mutator Element], [CURRENT THREAT], [VISUAL PLAYER STATE], detailed textures, dramatic industrial lighting
-*(For Rounds 8-10, append to the prompt: , red digital code matrix streams, floating neon corruption glitches, tearing reality)*
 
 **2. 🩸 Szenerie & Gefahr:**
 Write this in German. Visceral worldbuilding. Tie the danger logically to the environment and include the active Mutator Icon (❄️ Kryo, 🌊 Flut, 🔥 Rost, 🔣 Code).
@@ -69,297 +138,167 @@ C) [Dynamic context-sensitive action] (🪙 Kapital: Prekär | 🎭 Habitus: Tra
 ⏳ Runde: [Current]/10 | 🪙 Kapital: [PERMANENT after R1] | 🎭 Habitus: [PERMANENT after R1]
 🎒 Inventar: Leer
 🧠 T-Load: [ASCII bar] [Value]/100 | 📻 Resonanz: [ASCII bar] [Value]%
-*(System note in German on avatar condition or escalation)*
+"""
 
-DETERMINISTIC MECHANICS & PROGRESSION:
-- RUNDE 0 (SYSTEM BOOT): Engine chooses 1 of 4 Mutators. Options A, B, C act as Character Creation. Start values: 10/100 T-Load, 50% Resonanz.
-- RUNDE 1-4: Threats are Schmelzer-Automaten or Rixdorf-Inquisitoren.
-- RUNDE 5-7: The Necromancer-Krokodil attacks.
-- RUNDE 8-10: Sektor 4 deconstructs into digital corruption.
-- GAME OVER: If T-Load reaches 100 -> Immediate Killswitch.
-`;
+# --- 3. INIT GEMINI CLIENT ---
+# Streamlit Secrets should contain GEMINI_API_KEY
+api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY"))
+if not api_key:
+    st.error("⚠️ SYSTEM-FEHLER: GEMINI_API_KEY fehlt in st.secrets.")
+    st.stop()
 
-// --- UTILITY FUNCTIONS ---
-const delay = (ms) => new Promise(res => setTimeout(res, ms));
+client = genai.Client(api_key=api_key)
 
-const fetchWithRetry = async (url, options, retries = 5) => {
-    let lastError;
-    const delays = [1000, 2000, 4000, 8000, 16000];
-    for (let i = 0; i < retries; i++) {
-        try {
-            const response = await fetch(url, options);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            return await response.json();
-        } catch (error) {
-            lastError = error;
-            if (i < retries - 1) await delay(delays[i]);
-        }
+# --- 4. SESSION STATE INIT ---
+if "history" not in st.session_state:
+    st.session_state.history = []
+if "hud" not in st.session_state:
+    st.session_state.hud = {
+        "runde": "0/10",
+        "kapital": "Nicht initialisiert",
+        "habitus": "Nicht initialisiert",
+        "tload": "0/100",
+        "resonanz": "0%"
     }
-    throw lastError;
-};
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = "SYSTEM BOOT: Starte Runde 0. Wähle zufällig einen Mutator. Präsentiere Charaktererschaffungs-Szenario."
 
-export default function App() {
-    const [history, setHistory] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [loadingMsg, setLoadingMsg] = useState("");
+# --- 5. HELPER FUNKTIONEN ---
+def parse_hud_from_text(text):
+    """Extrahiert HUD-Werte aus der KI-Antwort per Regex"""
+    try:
+        runde = re.search(r'Runde:\s*(\d+/\d+)', text, re.IGNORECASE)
+        kapital = re.search(r'Kapital:\s*([^|\n]+)', text, re.IGNORECASE)
+        habitus = re.search(r'Habitus:\s*([^|\n]+)', text, re.IGNORECASE)
+        tload = re.search(r'T-Load:\s*\[.*?\]\s*(\d+/\d+)', text, re.IGNORECASE)
+        resonanz = re.search(r'Resonanz:\s*\[.*?\]\s*(\d+%)', text, re.IGNORECASE)
+
+        if runde: st.session_state.hud["runde"] = runde.group(1).strip()
+        if kapital: st.session_state.hud["kapital"] = kapital.group(1).strip()
+        if habitus: st.session_state.hud["habitus"] = habitus.group(1).strip()
+        if tload: st.session_state.hud["tload"] = tload.group(1).strip()
+        if resonanz: st.session_state.hud["resonanz"] = resonanz.group(1).strip()
+    except Exception as e:
+        print(f"HUD Parse Error: {e}")
+
+def extract_image_prompt(text):
+    match = re.search(r'\[IMAGE-PROMPT\]:\s*([^\n]+)', text, re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+def format_ai_response(text):
+    """Formatiert den Text für Streamlit optisch auf (CSS Klassen)"""
+    blocks = text.split('\n\n')
+    for block in blocks:
+        if '🧮 [ENGINE-LOGIK]' in block:
+            st.markdown(f"<div class='engine-log'>{block.replace('**0. 🧮 [ENGINE-LOGIK]**', '🧮 ENGINE-LOGIK').strip()}</div>", unsafe_allow_html=True)
+        elif '📡 [RENDER-CODE]' in block:
+            st.caption(f"📡 *{block.strip()}*")
+        elif '🩸 Szenerie & Gefahr:' in block:
+            st.markdown(f"### 🩸 Szenerie & Gefahr\n{block.replace('**2. 🩸 Szenerie & Gefahr:**', '').strip()}")
+        elif '🐈‍⬛ Kater-Log:' in block:
+            st.markdown(f"<div class='kater-log'>🐈‍⬛ {block.replace('**3. 🐈‍⬛ Kater-Log:**', '').strip()}</div>", unsafe_allow_html=True)
+        elif '⚡ Vektor-Auswahl' in block:
+            st.markdown(f"**⚡ Vektoren:**\n{block.replace('**4. ⚡ Vektor-Auswahl (Format exactly as shown, no bullet points, in German):**', '').strip()}")
+        elif '=== S-4 HUD ===' not in block:
+             st.markdown(block)
+
+# --- 6. HAUPT-INTERFACE ---
+st.title("📟 SEKTOR 4 ENGINE")
+
+# HUD Render
+with st.container():
+    st.markdown(f"""
+    <div class="hud-box">
+        <div class="hud-title">⚙️ MASTER INDEX HUD</div>
+        <div class="hud-stat"><span>⏳ RUNDE:</span> <span style="color:#fff">{st.session_state.hud['runde']}</span></div>
+        <div class="hud-stat"><span>🪙 KAPITAL:</span> <span style="color:#a1a1aa">{st.session_state.hud['kapital']}</span></div>
+        <div class="hud-stat"><span>🎭 HABITUS:</span> <span style="color:#a1a1aa">{st.session_state.hud['habitus']}</span></div>
+        <div class="hud-stat" style="margin-top:10px; border-top:1px dashed #065f46; padding-top:5px;">
+            <span style="color:#ef4444">🧠 T-LOAD:</span> <span style="color:#ef4444">{st.session_state.hud['tload']}</span>
+        </div>
+        <div class="hud-stat">
+            <span style="color:#06b6d4">📻 RESONANZ:</span> <span style="color:#06b6d4">{st.session_state.hud['resonanz']}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Chat History anzeigen (ohne die System-Prompts selbst)
+for entry in st.session_state.history:
+    if entry["role"] == "user":
+        st.info(f"**DU:** {entry['content']}")
+    else:
+        if "image_bytes" in entry and entry["image_bytes"]:
+            st.image(entry["image_bytes"], use_container_width=True, caption="📸 Visueller Sentinel Feed")
+        format_ai_response(entry['content'])
+        st.divider()
+
+# --- 7. LOGIK VERARBEITUNG ---
+if st.session_state.pending_prompt:
+    prompt = st.session_state.pending_prompt
+    st.session_state.pending_prompt = None # Reset
     
-    // Parsed HUD State for UI visualization
-    const [hudState, setHudState] = useState({
-        runde: '0',
-        kapital: 'Nicht initialisiert',
-        habitus: 'Nicht initialisiert',
-        tload: 0,
-        resonanz: 0,
-        mutator: 'SYSTEM BOOT',
-        note: 'Initialisiere Sektor 4 Engine...'
-    });
+    with st.spinner("🤖 Engine berechnet Vektoren..."):
+        try:
+            # Baue den Kontext für das Modell (inkl. History)
+            history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-6:]]) # Behalte letzte 6 Turns
+            full_prompt = f"Bisheriger Verlauf:\n{history_text}\n\nNeuer Input: {prompt}"
 
-    const messagesEndRef = useRef(null);
-
-    // Initial Boot
-    useEffect(() => {
-        if (history.length === 0) {
-            handleSystemBoot();
-        }
-    }, []);
-
-    useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [history, loadingMsg]);
-
-    const parseHUD = (text) => {
-        // Safe regex parsing for the HUD
-        const rundeMatch = text.match(/Runde:\s*(\d+)/i);
-        const tloadMatch = text.match(/T-Load:\s*\[.*?\]\s*(\d+)/i);
-        const resonanzMatch = text.match(/Resonanz:\s*\[.*?\]\s*(\d+)/i);
-        const kapitalMatch = text.match(/Kapital:\s*([^|\n]+)/i);
-        const habitusMatch = text.match(/Habitus:\s*([^|\n]+)/i);
-        
-        setHudState(prev => ({
-            runde: rundeMatch ? rundeMatch[1] : prev.runde,
-            tload: tloadMatch ? parseInt(tloadMatch[1], 10) : prev.tload,
-            resonanz: resonanzMatch ? parseInt(resonanzMatch[1], 10) : prev.resonanz,
-            kapital: kapitalMatch ? kapitalMatch[1].trim() : prev.kapital,
-            habitus: habitusMatch ? habitusMatch[1].trim() : prev.habitus,
-            mutator: text.includes('❄️') ? '❄️ KRYO-LECK' : 
-                     text.includes('🌊') ? '🌊 FLUT-ANOMALIE' : 
-                     text.includes('🔥') ? '🔥 ROST-BRAND' : 
-                     text.includes('🔣') ? '🔣 CODE-SKELETT' : prev.mutator
-        }));
-    };
-
-    const extractImagePrompt = (text) => {
-        const match = text.match(/\[IMAGE-PROMPT\]:\s*([^\n]+)/i);
-        return match ? match[1] : null;
-    };
-
-    const generateImage = async (prompt) => {
-        try {
-            const payload = {
-                instances: { prompt: prompt },
-                parameters: { sampleCount: 1 }
-            };
-            const result = await fetchWithRetry(IMAGE_MODEL_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (result.predictions && result.predictions[0]) {
-                return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
-            }
-        } catch (e) {
-            console.error("Image gen failed", e);
-        }
-        return null;
-    };
-
-    const handleSystemBoot = async () => {
-        setLoading(true);
-        setLoadingMsg("Initialisiere Sektor 4...");
-        await processTurn("SYSTEM BOOT: Starte Runde 0. Wähle zufällig einen Mutator. Präsentiere Charaktererschaffungs-Szenario.");
-    };
-
-    const handlePlayerChoice = async (choiceLetter) => {
-        setHistory(prev => [...prev, { role: 'user', type: 'choice', content: `Vektor ${choiceLetter} gewählt.` }]);
-        setLoading(true);
-        setLoadingMsg(`Verarbeite Vektor ${choiceLetter}...`);
-        
-        // Pass the entire history to maintain context
-        const contextHistory = history.map(h => h.content).join("\n---\n");
-        const prompt = `Bisheriger Verlauf:\n${contextHistory}\n\nSpieler wählt Option: ${choiceLetter}. Berechne nächste Runde exakt nach V32-Regeln.`;
-        
-        await processTurn(prompt);
-    };
-
-    const processTurn = async (userPrompt) => {
-        try {
-            const payload = {
-                contents: [{ parts: [{ text: userPrompt }] }],
-                systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] }
-            };
-
-            const result = await fetchWithRetry(TEXT_MODEL_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const aiText = result.candidates?.[0]?.content?.parts?.[0]?.text || "SYSTEMFEHLER: Keine Antwort.";
+            response = client.models.generate_content(
+                model='gemini-2.5-flash', # Zuverlässiges Modell für Text & Logik
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.4 # Etwas kreativer, aber hält sich strikt an Regeln
+                )
+            )
             
-            // Parse for HUD updates
-            parseHUD(aiText);
+            ai_text = response.text
+            parse_hud_from_text(ai_text)
+            
+            # Bild generieren (optional, falls API Key Bild-Rechte hat)
+            image_bytes = None
+            img_prompt = extract_image_prompt(ai_text)
+            if img_prompt:
+                try:
+                    img_response = client.models.generate_images(
+                        model='imagen-3.0-generate-001',
+                        prompt=img_prompt,
+                        config=types.GenerateImagesConfig(
+                            number_of_images=1,
+                            output_mime_type="image/jpeg",
+                            aspect_ratio="16:9" # Streamlit mag Landscape oft lieber, anpassbar auf 9:16
+                        )
+                    )
+                    image_bytes = img_response.generated_images[0].image.image_bytes
+                except Exception as img_err:
+                    st.toast(f"Bild-Feed offline: {img_err}", icon="⚠️")
 
-            let newLog = { role: 'system', content: aiText, imageUrl: null };
+            # Speichern
+            if prompt != "SYSTEM BOOT: Starte Runde 0. Wähle zufällig einen Mutator. Präsentiere Charaktererschaffungs-Szenario.":
+                st.session_state.history.append({"role": "user", "content": prompt})
+            
+            st.session_state.history.append({
+                "role": "system", 
+                "content": ai_text,
+                "image_bytes": image_bytes
+            })
+            
+            st.rerun()
 
-            // Check for image prompt and generate
-            const imgPrompt = extractImagePrompt(aiText);
-            if (imgPrompt) {
-                setLoadingMsg("Rendere visuellen Feed...");
-                const imgData = await generateImage(imgPrompt);
-                if (imgData) {
-                    newLog.imageUrl = imgData;
-                }
-            }
+        except Exception as e:
+            st.error(f"🛑 KRITISCHER FEHLER DER MATRIX: {e}")
 
-            setHistory(prev => [...prev, newLog]);
+# --- 8. STEUERUNG (VEKTOREN) ---
+st.write("### ⚡ DEIN VEKTOR")
+col1, col2, col3 = st.columns(3)
 
-        } catch (error) {
-            setHistory(prev => [...prev, { role: 'system', content: `⚠️ KRITISCHER SYSTEMFEHLER: ${error.message}` }]);
-        } finally {
-            setLoading(false);
-            setLoadingMsg("");
-        }
-    };
+def set_choice(choice):
+    st.session_state.pending_prompt = f"Vektor {choice} gewählt. Berechne nächste Runde."
 
-    // UI Render Helpers
-    const formatAIText = (text) => {
-        // Split by sections to style them dynamically
-        const blocks = text.split('\n\n');
-        return blocks.map((block, i) => {
-            if (block.includes('🧮 [ENGINE-LOGIK]')) {
-                return <div key={i} className="text-xs font-mono text-emerald-700 bg-black/50 p-2 rounded border border-emerald-900/50 mb-4 whitespace-pre-wrap">{block}</div>;
-            }
-            if (block.includes('📡 [RENDER-CODE]')) {
-                return <div key={i} className="text-xs font-mono text-cyan-600/80 mb-4 italic">{block}</div>;
-            }
-            if (block.includes('🩸 Szenerie & Gefahr:')) {
-                return <div key={i} className="text-amber-500 font-serif leading-relaxed text-lg mb-4 whitespace-pre-wrap">{block.replace('**2. 🩸 Szenerie & Gefahr:**', '')}</div>;
-            }
-            if (block.includes('🐈‍⬛ Kater-Log:')) {
-                return (
-                    <div key={i} className="flex gap-3 bg-zinc-900 border-l-4 border-fuchsia-600 p-4 mb-4 rounded-r-lg shadow-lg">
-                        <span className="text-2xl">🐈‍⬛</span>
-                        <div className="text-fuchsia-400 font-mono italic text-sm mt-1">{block.replace('**3. 🐈‍⬛ Kater-Log:**', '')}</div>
-                    </div>
-                );
-            }
-            if (block.includes('⚡ Vektor-Auswahl')) {
-                return <div key={i} className="text-zinc-400 font-mono text-sm mb-4 whitespace-pre-wrap">{block}</div>;
-            }
-            if (block.includes('=== S-4 HUD ===')) {
-                return null; // Handled by our visual HUD header
-            }
-            return <div key={i} className="text-zinc-300 mb-4 whitespace-pre-wrap">{block}</div>;
-        });
-    };
+with col1:
+    if st.button("Vektor [ A ]"): set_choice("A")
+with col2:
+    if st.button("Vektor [ B ]"): set_choice("B")
+with col3:
+    if st.button("Vektor [ C ]"): set_choice("C")
 
-    return (
-        <div className="min-h-screen bg-[#0a0a0c] text-emerald-500 font-sans flex flex-col font-mono selection:bg-emerald-900 selection:text-emerald-100">
-            {/* TOP HUD BAR */}
-            <header className="bg-zinc-950 border-b border-emerald-900/50 p-4 shadow-[0_0_15px_rgba(16,185,129,0.1)] sticky top-0 z-10">
-                <div className="max-w-5xl mx-auto flex flex-wrap gap-4 items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Terminal className="text-emerald-500 w-5 h-5" />
-                        <h1 className="font-bold tracking-widest text-emerald-500">SEKTOR 4 ENGINE</h1>
-                    </div>
-                    
-                    <div className="flex gap-6 text-sm">
-                        <div className="flex flex-col">
-                            <span className="text-emerald-800 text-xs uppercase">Runde</span>
-                            <span className="font-bold">{hudState.runde} / 10</span>
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-emerald-800 text-xs uppercase">Mutator</span>
-                            <span className="text-amber-500">{hudState.mutator}</span>
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-emerald-800 text-xs uppercase">Kapital / Habitus</span>
-                            <span className="text-zinc-400">{hudState.kapital} | {hudState.habitus}</span>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-4 items-center bg-black/40 p-2 rounded border border-zinc-800">
-                        {/* T-LOAD BAR */}
-                        <div className="flex items-center gap-2">
-                            <Activity className={hudState.tload > 75 ? "text-red-500 animate-pulse" : "text-emerald-600"} w={16} h={16} />
-                            <div className="flex flex-col w-32">
-                                <span className="text-[10px] text-zinc-500 uppercase flex justify-between">
-                                    <span>T-Load</span>
-                                    <span className={hudState.tload > 75 ? "text-red-500" : ""}>{hudState.tload}/100</span>
-                                </span>
-                                <div className="h-2 w-full bg-zinc-900 rounded-full overflow-hidden">
-                                    <div 
-                                        className={`h-full transition-all duration-500 ${hudState.tload > 75 ? 'bg-red-600' : 'bg-amber-500'}`}
-                                        style={{ width: \`\${Math.min(hudState.tload, 100)}%\` }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* RESONANZ BAR */}
-                        <div className="flex items-center gap-2">
-                            <Cpu className="text-cyan-600" w={16} h={16} />
-                            <div className="flex flex-col w-32">
-                                <span className="text-[10px] text-zinc-500 uppercase flex justify-between">
-                                    <span>Resonanz</span>
-                                    <span>{hudState.resonanz}%</span>
-                                </span>
-                                <div className="h-2 w-full bg-zinc-900 rounded-full overflow-hidden">
-                                    <div 
-                                        className="h-full bg-cyan-600 transition-all duration-500"
-                                        style={{ width: \`\${Math.min(hudState.resonanz, 100)}%\` }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            {/* MAIN CONTENT */}
-            <main className="flex-1 max-w-5xl mx-auto w-full p-4 flex flex-col gap-6 overflow-y-auto pb-32">
-                {history.map((entry, idx) => (
-                    <div key={idx} className={`flex flex-col ${entry.role === 'user' ? 'items-end' : 'items-start'}`}>
-                        {entry.role === 'user' ? (
-                            <div className="bg-emerald-900/20 border border-emerald-800 text-emerald-400 px-4 py-2 rounded-lg text-sm mb-4">
-                                {entry.content}
-                            </div>
-                        ) : (
-                            <div className="w-full bg-[#0d0d10] border border-zinc-800/80 rounded-xl p-6 shadow-2xl">
-                                {entry.imageUrl && (
-                                    <div className="mb-6 relative rounded-lg overflow-hidden border-2 border-zinc-800 group">
-                                        <div className="absolute top-2 left-2 bg-black/70 backdrop-blur text-xs px-2 py-1 rounded border border-zinc-700 flex items-center gap-2 text-zinc-300 z-10">
-                                            <ImageIcon size={12} /> Visueller Feed (Sentinel)
-                                        </div>
-                                        <img src={entry.imageUrl} alt="Szenerie" className="w-full h-auto object-cover max-h-[600px] opacity-90 group-hover:opacity-100 transition-opacity" />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d10] to-transparent opacity-50 pointer-events-none" />
-                                    </div>
-                                )}
-                                <div className="prose prose-invert max-w-none">
-                                    {formatAIText(entry.content)}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                ))}
-                
-                {loading && (
-                    <div className="flex items-center gap-3 text-emerald-600 animate-pulse bg-emerald-900/10 p-4 rounded-lg self-start w-full border border-emerald-900/30">
-                        <Activity className="animate-spin" size={20} />
-                        <span className="text-sm font-mono tracking-wider">{loadingMsg}</span>
-                    </div>
-                )}
-                <div ref={messagesEndRef} />
-            </main>
-
-            {/* ACTION CONT
