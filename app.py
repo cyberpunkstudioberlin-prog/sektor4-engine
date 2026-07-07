@@ -10,22 +10,31 @@ st.set_page_config(
     page_title="Sektor 4 Engine // Questbook Killswitch",
     page_icon="🤖",
     layout="centered",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed" # Versteckt das Cheat-Menü standardmäßig
 )
 
+# CSS UPDATE: Deutlich größere Schriften für Mobile
 st.markdown("""
 <style>
     .stApp { background-color: #050505; color: #10b981; }
-    .hud-box { background-color: #0d0d10; border: 1px solid #065f46; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; }
-    .hud-title { color: #eab308; font-weight: bold; font-size: 1.2rem; margin-bottom: 10px; border-bottom: 1px solid #065f46; padding-bottom: 5px; }
-    .hud-stat { display: flex; justify-content: space-between; margin-bottom: 5px; }
-    .kater-log { background-color: #18181b; border-left: 4px solid #d946ef; padding: 15px; font-style: italic; color: #e879f9; margin: 15px 0; border-radius: 0 8px 8px 0; }
-    .engine-log { background-color: rgba(6, 95, 70, 0.2); color: #34d399; padding: 10px; border: 1px solid #065f46; border-radius: 5px; font-family: monospace; font-size: 0.85em; margin-bottom: 15px; }
-    .ascii-art { background-color: #000000; color: #10b981; font-family: 'Courier New', Courier, monospace; font-size: 0.8rem; line-height: 1.2; padding: 20px; border: 1px solid #10b981; border-radius: 5px; overflow-x: auto; white-space: pre; text-align: center; margin-bottom: 20px; box-shadow: 0 0 10px rgba(16, 185, 129, 0.2) inset; }
-    .stButton>button { width: 100%; background-color: #000; color: #a1a1aa; border: 2px solid #27272a; text-transform: uppercase; font-weight: bold; transition: all 0.3s; }
+    
+    /* Vergrößerung von Standard-Texten (Szenerie) */
+    p, li, .stMarkdown { font-size: 1.15rem !important; line-height: 1.6 !important; color: #d4d4d8; }
+    h3 { font-size: 1.5rem !important; margin-top: 1.5rem !important; }
+    
+    .hud-box { background-color: #0d0d10; border: 1px solid #065f46; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; font-size: 1.1rem; }
+    .hud-title { color: #eab308; font-weight: bold; font-size: 1.3rem; margin-bottom: 10px; border-bottom: 1px solid #065f46; padding-bottom: 5px; }
+    .hud-stat { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    
+    .kater-log { background-color: #18181b; border-left: 4px solid #d946ef; padding: 15px; font-style: italic; color: #e879f9; margin: 15px 0; border-radius: 0 8px 8px 0; font-size: 1.15rem; }
+    .engine-log { background-color: rgba(6, 95, 70, 0.2); color: #34d399; padding: 10px; border: 1px solid #065f46; border-radius: 5px; font-family: monospace; font-size: 0.95rem; margin-bottom: 15px; }
+    .ascii-art { background-color: #000000; color: #10b981; font-family: 'Courier New', Courier, monospace; font-size: 0.85rem; line-height: 1.2; padding: 20px; border: 1px solid #10b981; border-radius: 5px; overflow-x: auto; white-space: pre; text-align: center; margin-bottom: 20px; box-shadow: 0 0 10px rgba(16, 185, 129, 0.2) inset; }
+    
+    .stButton>button { width: 100%; background-color: #000; color: #a1a1aa; border: 2px solid #27272a; text-transform: uppercase; font-weight: bold; font-size: 1.1rem; padding: 0.75rem; transition: all 0.3s; }
     .stButton>button:hover { border-color: #10b981; color: #10b981; }
-    .game-over { background-color: #7f1d1d; color: #fca5a5; padding: 20px; border: 2px solid #ef4444; border-radius: 8px; text-align: center; font-weight: bold; margin-top: 20px; }
-    .game-win { background-color: #064e3b; color: #6ee7b7; padding: 20px; border: 2px solid #10b981; border-radius: 8px; text-align: center; font-weight: bold; margin-top: 20px; }
+    
+    .game-over { background-color: #7f1d1d; color: #fca5a5; padding: 20px; border: 2px solid #ef4444; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.2rem; margin-top: 20px; }
+    .game-win { background-color: #064e3b; color: #6ee7b7; padding: 20px; border: 2px solid #10b981; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.2rem; margin-top: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -86,6 +95,31 @@ if "history" not in st.session_state:
     st.session_state.history = []
 if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = "SYSTEM BOOT"
+
+def reset_game():
+    st.session_state.clear()
+    st.rerun()
+
+# --- 4.5 DEBUG / CHEAT MENU (SIDEBAR) ---
+with st.sidebar:
+    st.header("🛠️ Entwickler-Terminal")
+    st.write("Wird ignoriert, wenn Spiel vorbei ist.")
+    
+    if st.button("⏩ Springe zu Runde 9"):
+        st.session_state.state["runde"] = 9
+        st.session_state.state["t_load"] = 85
+        st.session_state.state["resonanz"] = 90
+        st.session_state.state["kapital"] = "Elite"
+        st.session_state.state["habitus"] = "Anpassung"
+        st.session_state.pending_prompt = "A" # Triggert direkt eine Berechnung
+        st.rerun()
+        
+    if st.button("💀 Löse Killswitch aus (T-Load 100)"):
+        st.session_state.state["t_load"] = 100
+        st.rerun()
+        
+    if st.button("🔄 Hard Reset"):
+        reset_game()
 
 # --- 5. LOGIK BERECHNUNG (PYTHON) ---
 def calculate_turn(choice):
@@ -169,10 +203,6 @@ def format_ai_response(text):
         elif '=== S-4 HUD ===' not in block and block.strip() != '':
              st.markdown(block)
 
-def reset_game():
-    st.session_state.clear()
-    st.rerun()
-
 # --- 7. MAIN UI ---
 st.title("📟 SEKTOR 4 ENGINE")
 s = st.session_state.state
@@ -226,7 +256,6 @@ Resonanz: {calc_data['old_r']} + 5 + Strafen = {s['resonanz']}
 
 Schreibe nun die Storyline basierend auf diesen Werten. Integriere zwingend das [STORY-INJECT] in Schritt 2."""
 
-        # Wenn Game Over (Killswitch) erreicht ist, überspringen wir den API-Call
         if s["t_load"] >= 100:
             s["t_load"] = 100
         else:
@@ -280,4 +309,4 @@ else:
         if st.button("Vektor [ B ]"): set_choice("B")
     with col3:
         if st.button("Vektor [ C ]"): set_choice("C")
-    
+        
