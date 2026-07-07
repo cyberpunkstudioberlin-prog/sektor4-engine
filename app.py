@@ -10,31 +10,32 @@ st.set_page_config(
     page_title="Sektor 4 Engine // Questbook Killswitch",
     page_icon="🤖",
     layout="centered",
-    initial_sidebar_state="collapsed" # Versteckt das Cheat-Menü standardmäßig
+    initial_sidebar_state="collapsed"
 )
 
-# CSS UPDATE: Deutlich größere Schriften für Mobile
+# CSS UPDATE: Maximale Lesbarkeit & Vektor-Listen-Styling
 st.markdown("""
 <style>
     .stApp { background-color: #050505; color: #10b981; }
     
-    /* Vergrößerung von Standard-Texten (Szenerie) */
-    p, li, .stMarkdown { font-size: 1.15rem !important; line-height: 1.6 !important; color: #d4d4d8; }
-    h3 { font-size: 1.5rem !important; margin-top: 1.5rem !important; }
+    p, li, .stMarkdown { font-size: 1.3rem !important; line-height: 1.7 !important; color: #d4d4d8; }
+    h3 { font-size: 1.6rem !important; margin-top: 1.5rem !important; }
     
-    .hud-box { background-color: #0d0d10; border: 1px solid #065f46; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; font-size: 1.1rem; }
-    .hud-title { color: #eab308; font-weight: bold; font-size: 1.3rem; margin-bottom: 10px; border-bottom: 1px solid #065f46; padding-bottom: 5px; }
+    .hud-box { background-color: #0d0d10; border: 1px solid #065f46; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; font-size: 1.2rem; }
+    .hud-title { color: #eab308; font-weight: bold; font-size: 1.4rem; margin-bottom: 10px; border-bottom: 1px solid #065f46; padding-bottom: 5px; }
     .hud-stat { display: flex; justify-content: space-between; margin-bottom: 8px; }
     
-    .kater-log { background-color: #18181b; border-left: 4px solid #d946ef; padding: 15px; font-style: italic; color: #e879f9; margin: 15px 0; border-radius: 0 8px 8px 0; font-size: 1.15rem; }
-    .engine-log { background-color: rgba(6, 95, 70, 0.2); color: #34d399; padding: 10px; border: 1px solid #065f46; border-radius: 5px; font-family: monospace; font-size: 0.95rem; margin-bottom: 15px; }
-    .ascii-art { background-color: #000000; color: #10b981; font-family: 'Courier New', Courier, monospace; font-size: 0.85rem; line-height: 1.2; padding: 20px; border: 1px solid #10b981; border-radius: 5px; overflow-x: auto; white-space: pre; text-align: center; margin-bottom: 20px; box-shadow: 0 0 10px rgba(16, 185, 129, 0.2) inset; }
+    .kater-log { background-color: #18181b; border-left: 4px solid #d946ef; padding: 15px; font-style: italic; color: #e879f9; margin: 15px 0; border-radius: 0 8px 8px 0; font-size: 1.3rem; }
+    .engine-log { background-color: rgba(6, 95, 70, 0.2); color: #34d399; padding: 10px; border: 1px solid #065f46; border-radius: 5px; font-family: monospace; font-size: 1rem; margin-bottom: 15px; }
+    .ascii-art { background-color: #000000; color: #10b981; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; line-height: 1.2; padding: 20px; border: 1px solid #10b981; border-radius: 5px; overflow-x: auto; white-space: pre; text-align: center; margin-bottom: 20px; box-shadow: 0 0 10px rgba(16, 185, 129, 0.2) inset; }
     
-    .stButton>button { width: 100%; background-color: #000; color: #a1a1aa; border: 2px solid #27272a; text-transform: uppercase; font-weight: bold; font-size: 1.1rem; padding: 0.75rem; transition: all 0.3s; }
+    .vektor-item { margin-top: 15px; padding: 15px; background: rgba(16, 185, 129, 0.05); border-left: 4px solid #10b981; border-radius: 4px; display: block; }
+    
+    .stButton>button { width: 100%; background-color: #000; color: #a1a1aa; border: 2px solid #27272a; text-transform: uppercase; font-weight: bold; font-size: 1.2rem; padding: 1rem; transition: all 0.3s; }
     .stButton>button:hover { border-color: #10b981; color: #10b981; }
     
-    .game-over { background-color: #7f1d1d; color: #fca5a5; padding: 20px; border: 2px solid #ef4444; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.2rem; margin-top: 20px; }
-    .game-win { background-color: #064e3b; color: #6ee7b7; padding: 20px; border: 2px solid #10b981; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.2rem; margin-top: 20px; }
+    .game-over { background-color: #7f1d1d; color: #fca5a5; padding: 20px; border: 2px solid #ef4444; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.3rem; margin-top: 20px; }
+    .game-win { background-color: #064e3b; color: #6ee7b7; padding: 20px; border: 2px solid #10b981; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.3rem; margin-top: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -111,7 +112,7 @@ with st.sidebar:
         st.session_state.state["resonanz"] = 90
         st.session_state.state["kapital"] = "Elite"
         st.session_state.state["habitus"] = "Anpassung"
-        st.session_state.pending_prompt = "A" # Triggert direkt eine Berechnung
+        st.session_state.pending_prompt = "A" 
         st.rerun()
         
     if st.button("💀 Löse Killswitch aus (T-Load 100)"):
@@ -199,7 +200,11 @@ def format_ai_response(text):
         elif '🐈‍⬛ Kater-Log:' in block:
             st.markdown(f"<div class='kater-log'>🐈‍⬛ {block.replace('**3. 🐈‍⬛ Kater-Log:**', '').strip()}</div>", unsafe_allow_html=True)
         elif '⚡ Vektor-Auswahl' in block:
-            st.markdown(f"**⚡ Vektoren:**\n{block.replace('**4. ⚡ Vektor-Auswahl:**', '').strip()}")
+            vectors = block.replace('**4. ⚡ Vektor-Auswahl:**', '').strip()
+            vectors = vectors.replace('A)', '<div class="vektor-item"><b>A)</b>')
+            vectors = vectors.replace('B)', '</div><div class="vektor-item"><b>B)</b>')
+            vectors = vectors.replace('C)', '</div><div class="vektor-item"><b>C)</b>') + '</div>'
+            st.markdown(f"**⚡ Vektoren:**{vectors}", unsafe_allow_html=True)
         elif '=== S-4 HUD ===' not in block and block.strip() != '':
              st.markdown(block)
 
