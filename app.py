@@ -236,19 +236,18 @@ for entry in st.session_state.history:
         format_ai_response(entry['content'])
         st.divider()
 
-# --- 8. GAME LOOP VERARBEITUNG ---
+# --- 8. GAME LOOP VERARBEITUNG (STREAMING) ---
 if st.session_state.pending_prompt:
     raw_choice = st.session_state.pending_prompt
     st.session_state.pending_prompt = None 
     
-    with st.spinner("🤖 Matrix wird kalkuliert..."):
-        if raw_choice == "SYSTEM BOOT":
-            prompt = f"[SYSTEM-OVERRIDE] Starte RUNDE 0. Mutator: {s['mutator']}. Setze T-Load=10, Resonanz=50. Erstelle das Boot-Szenario zur Charakterwahl (A, B oder C)."
-        else:
-            calc_data = calculate_turn(raw_choice)
-            threat_context = get_threat_context(s["runde"], s["t_load"])
-            
-            prompt = f"""[SYSTEM-OVERRIDE] Spieler wählt {raw_choice}. 
+    if raw_choice == "SYSTEM BOOT":
+        prompt = f"[SYSTEM-OVERRIDE] Starte RUNDE 0. Mutator: {s['mutator']}. Setze T-Load=10, Resonanz=50. Erstelle das Boot-Szenario zur Charakterwahl (A, B oder C)."
+    else:
+        calc_data = calculate_turn(raw_choice)
+        threat_context = get_threat_context(s["runde"], s["t_load"])
+        
+        prompt = f"""[SYSTEM-OVERRIDE] Spieler wählt {raw_choice}. 
 EXAKTE WERTE FÜR STEP 0 & HUD:
 Neue Runde: {s['runde']}/10
 Habitus: {s['habitus']}
@@ -261,27 +260,49 @@ Resonanz: {calc_data['old_r']} + 5 + Strafen = {s['resonanz']}
 
 Schreibe nun die Storyline basierend auf diesen Werten. Integriere zwingend das [STORY-INJECT] in Schritt 2."""
 
-        if s["t_load"] >= 100:
-            s["t_load"] = 100
-        else:
-            try:
-                history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-4:]])
-                full_prompt = f"History:\n{history_text}\n\nNeuer Input:\n{prompt}"
+    if s["t_load"] >= 100:
+        s["t_load"] = 100
+        st.rerun() # Killswitch sofort triggern
+    else:
+        # STREAMING UI
+        st.caption("📡 Eingehende Datenübertragung vom Master Index (Stream aktiv)...")
+        stream_placeholder = st.empty()
+        full_response = ""
+        
+        try:
+            history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-4:]])
+            full_prompt = f"History:\n{history_text}\n\nNeuer Input:\n{prompt}"
 
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=full_prompt,
-                    config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.4)
-                )
-                
-                if raw_choice != "SYSTEM BOOT":
-                    st.session_state.history.append({"role": "user", "content": f"Vektor {raw_choice} gewählt."})
-                
-                st.session_state.history.append({"role": "system", "content": response.text})
+            # STREAMING API CALL
+            response_stream = client.models.generate_content_stream(
+                model='gemini-2.5-flash',
+                contents=full_prompt,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.4)
+            )
+            
+            # Live-Ausgabe im Hacker-Stil
+            for chunk in response_stream:
+                if chunk.text:
+                    full_response += chunk.text
+                    stream_placeholder.markdown(f"""
+                    <div style="background-color: #000; color: #10b981; font-family: monospace; padding: 15px; border-left: 3px solid #10b981; font-size: 0.9rem; max-height: 400px; overflow-y: auto;">
+                        {full_response} █
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            # Sobald der Stream fertig ist: Platzhalter leeren und sauber formatieren
+            stream_placeholder.empty()
+            
+            if raw_choice != "SYSTEM BOOT":
+                st.session_state.history.append({"role": "user", "content": f"Vektor {raw_choice} gewählt."})
+            
+            st.session_state.history.append({"role": "system", "content": full_response})
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"🛑 MATRIX-FEHLER (Verbindungsabbruch): {e}")
+            if st.button("Verbindung neu aufbauen"):
                 st.rerun()
-
-            except Exception as e:
-                st.error(f"🛑 MATRIX-FEHLER: {e}")
 
 # --- 9. STEUERUNG & END CONDITIONS ---
 if s["t_load"] >= 100:
@@ -314,4 +335,4 @@ else:
         if st.button("Vektor [ B ]"): set_choice("B")
     with col3:
         if st.button("Vektor [ C ]"): set_choice("C")
-        
+                
