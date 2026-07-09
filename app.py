@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS UPDATE: Maximale Lesbarkeit & Vektor-Listen-Styling
+# CSS: Maximale Lesbarkeit & Vektor-Listen-Styling
 st.markdown("""
 <style>
     .stApp { background-color: #050505; color: #10b981; }
@@ -47,7 +47,7 @@ Follow V32 Rules strictly. NEVER calculate numbers yourself. I will provide the 
 CRITICAL INSTRUCTIONS:
 1. All text MUST be in GERMAN.
 2. Narrative is opulent, visceral, dark Cyberpunk/Steampunk.
-3. Narrator: Feline Anomalie (cynical digital cat mentor).
+3. Narrator: Feline Anomalie (usually a cynical digital cat mentor, unless the prompt tells you he is panicking).
 4. No bullet points in Vector options.
 
 STRICT 6-STEP OUTPUT SEQUENCE:
@@ -61,7 +61,7 @@ Context-sensitive ASCII art of [CURRENT ROOM] and [THREAT] inside a markdown ```
 Write this in German. Incorporate Mutator, Threat, and Room. ALWAYS integrate the [STORY-INJECT] provided in the prompt.
 
 **3. 🐈‍⬛ Kater-Log:**
-Max 2 sentences. Cynical Feline Anomalie advice/reaction.
+Max 2 sentences. The commentary of the Feline Anomalie based strictly on the current emotional/mental state described in the [STORY-INJECT].
 
 **4. ⚡ Vektor-Auswahl:**
 Format exactly (No bullets):
@@ -104,14 +104,13 @@ def reset_game():
 # --- 4.5 DEBUG / CHEAT MENU (SIDEBAR) ---
 with st.sidebar:
     st.header("🛠️ Entwickler-Terminal")
-    st.write("Wird ignoriert, wenn Spiel vorbei ist.")
     
-    if st.button("⏩ Springe zu Runde 9"):
-        st.session_state.state["runde"] = 9
-        st.session_state.state["t_load"] = 85
-        st.session_state.state["resonanz"] = 90
-        st.session_state.state["kapital"] = "Elite"
-        st.session_state.state["habitus"] = "Anpassung"
+    if st.button("⏩ Springe direkt zum Boss (Runde 4 -> 5)"):
+        st.session_state.state["runde"] = 4
+        st.session_state.state["t_load"] = 40
+        st.session_state.state["resonanz"] = 65
+        st.session_state.state["kapital"] = "Gasse"
+        st.session_state.state["habitus"] = "Disruption"
         st.session_state.pending_prompt = "A" 
         st.rerun()
         
@@ -169,13 +168,26 @@ def calculate_turn(choice):
 
 def get_threat_context(runde, t_load):
     context = ""
+    
+    # RUNDEN 1-4: Das Fußvolk
     if runde in [1, 2, 3, 4]:
-        context = "FEIND-VORGABE: Lass den Spieler auf 'Schmelzer-Automaten' oder 'Rixdorf-Inquisitoren' treffen. Rohe, mechanische Gegner."
+        feind_typ = random.choice(["Schmelzer", "Inquisitor"])
+        if feind_typ == "Schmelzer":
+            context = "FEIND-VORGABE: Der Feind ist ein gigantischer 'Schmelzer-Automat'. (Design: Klobiger Steampunk, Rost, Dampf, Öl. Taktik: Rohe Zerstörungskraft. Reißt Wände ein, schleudert flüssiges Metall). Lass ihn die Szenerie physisch zerstören!"
+        else:
+            context = "FEIND-VORGABE: Der Feind ist ein 'Rixdorf-Inquisitoren'. (Design: Schneller Cyberpunk-Kultist, neon-glühende Kabel im Schädel, Kameralinsen-Augen. Taktik: Nutzt EMP-Schocks, hackt Systeme, agiert lautlos). Lass ihn direkt die Wahrnehmung angreifen!"
+            
+    # RUNDEN 5-7: Der Nemesis-Boss mit PANISCHEM KATER
     elif runde in [5, 6, 7]:
-        context = "FEIND-VORGABE (BOSS-PHASE): Das gigantische 'Necromancer-Krokodil' greift an! Es ist eine schwere mechanische Bedrohung und beschwört 'Untote Korrumpierte Mechanische Plüsch-Bären'."
+        context = """FEIND-VORGABE (BOSS-PHASE): Das 'Necromancer-Krokodil' jagt den Spieler wie ein unaufhaltsamer Nemesis! Es beschwört Schwärme von 'Untoten Zombie-Kuscheltieren' (verrottete, mechanische Plüschtiere) als Waffen.
+WICHTIG (VIERTE WAND): Das Krokodil spricht direkt mit dem Spieler und durchbricht die vierte Wand! Es macht sich über das Interface, den T-Load-Balken, den Python-Code der Sektor 4 Engine oder die Klicks des Spielers lustig.
+KRITISCH (KATER IN PANIK): Die 'Feline Anomalie' (der Kater) verliert in Schritt 3 ('Kater-Log') VÖLLIG seine zynische Beherrschung. Er gerät in nackte, hysterische Panik! Seine Textzeilen müssen in Großbuchstaben geschrieben sein oder System-Glitches enthalten (z.B. 'NEIN! ES HACKT MEINE KERN-PROZESSE! HILF MIR!'). Er merkt, dass das Krokodil seine digitalen Barrieren zerfetzt und ihn löschen will."""
+        
+    # RUNDEN 8-10: Der System-Kollaps
     elif runde in [8, 9, 10]:
         context = "FEIND-VORGABE (SYSTEM-KOLLAPS): Sektor 4 dekonstruiert sich in digitale Korruption. Rote Matrix-Streams und Neon-Glitches zerreißen die Realität."
     
+    # SYSTEM-WARNUNG bei hohem T-Load
     if t_load >= 75:
         context += " [SYSTEM-ZUSTAND: Der T-Load ist über 75. Der Avatar ist kritisch verwundet. Beschreibe Schmerzen und Systemversagen!]"
         
@@ -242,7 +254,9 @@ if st.session_state.pending_prompt:
     st.session_state.pending_prompt = None 
     
     if raw_choice == "SYSTEM BOOT":
-        prompt = f"[SYSTEM-OVERRIDE] Starte RUNDE 0. Mutator: {s['mutator']}. Setze T-Load=10, Resonanz=50. Erstelle das Boot-Szenario zur Charakterwahl (A, B oder C)."
+        prompt = f"""[SYSTEM-OVERRIDE] Starte RUNDE 0. Mutator: {s['mutator']}. Setze T-Load=10, Resonanz=50. 
+[STORY-INJECT]: Beschreibe eine sofortige, absolut tödliche Umgebungseffekte, die exakt durch den Mutator {s['mutator']} ausgelöst werden. Der Spieler steht eine Millisekunde vor dem sicheren Tod. Dann greift die "Feline Anomalie" (wie ein digitaler, zynischer gestiefelter Kater) per Deus Ex Machina ein, zieht den Spieler in letzter Sekunde brutal aus der Gefahrenzone und wirft ihn auf den harten Boden von Sektor 4.
+Nutze diese Rettung als narrativen Übergang zur Charakterwahl (Vektor A, B oder C)."""
     else:
         calc_data = calculate_turn(raw_choice)
         threat_context = get_threat_context(s["runde"], s["t_load"])
@@ -262,9 +276,8 @@ Schreibe nun die Storyline basierend auf diesen Werten. Integriere zwingend das 
 
     if s["t_load"] >= 100:
         s["t_load"] = 100
-        st.rerun() # Killswitch sofort triggern
+        st.rerun()
     else:
-        # STREAMING UI
         st.caption("📡 Eingehende Datenübertragung vom Master Index (Stream aktiv)...")
         stream_placeholder = st.empty()
         full_response = ""
@@ -273,14 +286,12 @@ Schreibe nun die Storyline basierend auf diesen Werten. Integriere zwingend das 
             history_text = "\n\n".join([f"{e['role'].upper()}: {e['content']}" for e in st.session_state.history[-4:]])
             full_prompt = f"History:\n{history_text}\n\nNeuer Input:\n{prompt}"
 
-            # STREAMING API CALL
             response_stream = client.models.generate_content_stream(
                 model='gemini-2.5-flash',
                 contents=full_prompt,
                 config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.4)
             )
             
-            # Live-Ausgabe im Hacker-Stil
             for chunk in response_stream:
                 if chunk.text:
                     full_response += chunk.text
@@ -290,7 +301,6 @@ Schreibe nun die Storyline basierend auf diesen Werten. Integriere zwingend das 
                     </div>
                     """, unsafe_allow_html=True)
             
-            # Sobald der Stream fertig ist: Platzhalter leeren und sauber formatieren
             stream_placeholder.empty()
             
             if raw_choice != "SYSTEM BOOT":
@@ -335,4 +345,4 @@ else:
         if st.button("Vektor [ B ]"): set_choice("B")
     with col3:
         if st.button("Vektor [ C ]"): set_choice("C")
-                
+    
