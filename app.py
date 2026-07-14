@@ -1,6 +1,5 @@
 import streamlit as st
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 import random
 
 # --- 1. SEITEN-KONFIGURATION ---
@@ -30,7 +29,7 @@ st.markdown("""
     header {visibility: hidden;}
     footer {visibility: hidden;}
 
-    /* HUD Styling (HTML Injection) */
+    /* HUD Styling */
     .hud-container {
         border: 2px solid #d46a13;
         background: rgba(20, 22, 28, 0.85);
@@ -61,7 +60,7 @@ st.markdown("""
         letter-spacing: -1px;
     }
 
-    /* Narrative Block Styling (Markdown Ausgabe) */
+    /* Narrative Block Styling */
     .narrative-block {
         line-height: 1.6;
         margin-bottom: 20px;
@@ -78,7 +77,7 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* Standard Buttons (A, B, C, Reset) -> Streamlit "secondary" */
+    /* Standard Buttons */
     button[kind="secondary"] {
         background-color: rgba(5, 6, 8, 0.8) !important;
         border: 1px solid #d46a13 !important;
@@ -98,7 +97,7 @@ st.markdown("""
         padding-left: 20px !important;
     }
 
-    /* Killswitch Button -> Streamlit "primary" */
+    /* Killswitch Button */
     button[kind="primary"] {
         background-color: rgba(5, 6, 8, 0.8) !important;
         border: 1px solid #ff003c !important;
@@ -116,7 +115,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. SYSTEM PROMPT (V34.1 GEMINI EDITION) ---
+# --- 3. SYSTEM PROMPT ---
 SYSTEM_PROMPT = """
 Du bist die "Sektor 4 Engine", ein deterministisches Textadventure-System.
 
@@ -140,11 +139,15 @@ Halte dich bei deiner Antwort EXAKT an folgende Formatierung, damit es in der Ap
 (Gib eine kurze narrative Vorschau darauf, was rohe Gewalt (A), Hacking (B) oder Schleichen (C) in dieser Situation bedeuten würde. Keine Listen, nur kurzer Fließtext.)
 """
 
-# --- 4. API SETUP (Frischer Client bei jedem Run) ---
+# --- 4. API SETUP (ROBUSTE VERSION) ---
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
-    # Der Client wird nun stateless (frisch bei jedem Run) genutzt
-    client = genai.Client(api_key=api_key)
+    genai.configure(api_key=api_key)
+    # GenerativeModel initialisieren
+    model = genai.GenerativeModel(
+        model_name='gemini-1.5-flash',
+        system_instruction=SYSTEM_PROMPT
+    )
 except Exception as e:
     st.error("⚠️ SYSTEM-FEHLER: GEMINI_API_KEY nicht in st.secrets gefunden!")
     st.stop()
@@ -228,27 +231,18 @@ def process_turn(choice):
         s["story_log"].append("✨ **System-Meldung: Herzlichen Glückwunsch zum Überleben von Kapitel eins – deine Biografie wurde erfolgreich für den Übergang in die Red-Room-Matrix validiert. Die Illusion von Sektor 4 kollabiert zu Datenstaub. Die Feline Anomalie nickt dir knapp zu. // Autor: Murat Zengin**")
         return
 
-    # --- STATELESS API AUFRUF (Verhindert "Client Closed" Fehler) ---
+    # --- STATELESS API AUFRUF (Verhindert Verbindungsabbrüche!) ---
     with st.spinner("Sektor 4 berechnet Vektoren..."):
         try:
-            # Kontext aufbauen: Wir übergeben den Text der VORHERIGEN Runde, 
-            # damit die KI weiß, was zuletzt passiert ist.
+            # Wir übergeben Gemini den alten Text einfach wieder mit, 
+            # so brauchen wir keine "offene Chat-Verbindung", die abbrechen könnte!
             context = ""
             if len(s["story_log"]) > 0:
                 context = f"--- BISHERIGE SZENE ---\n{s['story_log'][-1]}\n\n"
             
-            # Vollständigen Prompt zusammensetzen
             full_prompt = context + "--- NEUER ZUG ---\n" + prompt
 
-            # Verwende generate_content anstelle einer offenen Chat-Session
-            response = client.models.generate_content(
-                model='gemini-1.5-flash',
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    temperature=0.7
-                )
-            )
+            response = model.generate_content(full_prompt)
             s["story_log"].append(response.text)
         except Exception as e:
             s["story_log"].append(f"⚠️ **Verbindungsabbruch zum Master Index.** Fehler: {str(e)}")
