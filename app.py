@@ -140,9 +140,10 @@ Halte dich bei deiner Antwort EXAKT an folgende Formatierung, damit es in der Ap
 (Gib eine kurze narrative Vorschau darauf, was rohe Gewalt (A), Hacking (B) oder Schleichen (C) in dieser Situation bedeuten würde. Keine Listen, nur kurzer Fließtext.)
 """
 
-# --- 4. API SETUP (NEUES SDK) ---
+# --- 4. API SETUP (Frischer Client bei jedem Run) ---
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
+    # Der Client wird nun stateless (frisch bei jedem Run) genutzt
     client = genai.Client(api_key=api_key)
 except Exception as e:
     st.error("⚠️ SYSTEM-FEHLER: GEMINI_API_KEY nicht in st.secrets gefunden!")
@@ -163,13 +164,6 @@ if "state" not in st.session_state:
         "game_over": False,
         "story_log": []
     }
-    # Initialisiere Gemini Chat mit dem NEUEN SDK
-    st.session_state.chat = client.chats.create(
-        model='gemini-1.5-flash',
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT
-        )
-    )
 
 s = st.session_state.state
 
@@ -234,10 +228,27 @@ def process_turn(choice):
         s["story_log"].append("✨ **System-Meldung: Herzlichen Glückwunsch zum Überleben von Kapitel eins – deine Biografie wurde erfolgreich für den Übergang in die Red-Room-Matrix validiert. Die Illusion von Sektor 4 kollabiert zu Datenstaub. Die Feline Anomalie nickt dir knapp zu. // Autor: Murat Zengin**")
         return
 
-    # API Aufruf mit dem unbestechlichen Python-State
+    # --- STATELESS API AUFRUF (Verhindert "Client Closed" Fehler) ---
     with st.spinner("Sektor 4 berechnet Vektoren..."):
         try:
-            response = st.session_state.chat.send_message(prompt)
+            # Kontext aufbauen: Wir übergeben den Text der VORHERIGEN Runde, 
+            # damit die KI weiß, was zuletzt passiert ist.
+            context = ""
+            if len(s["story_log"]) > 0:
+                context = f"--- BISHERIGE SZENE ---\n{s['story_log'][-1]}\n\n"
+            
+            # Vollständigen Prompt zusammensetzen
+            full_prompt = context + "--- NEUER ZUG ---\n" + prompt
+
+            # Verwende generate_content anstelle einer offenen Chat-Session
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.7
+                )
+            )
             s["story_log"].append(response.text)
         except Exception as e:
             s["story_log"].append(f"⚠️ **Verbindungsabbruch zum Master Index.** Fehler: {str(e)}")
