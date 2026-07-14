@@ -1,5 +1,6 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import random
 
 # --- 1. SEITEN-KONFIGURATION ---
@@ -139,15 +140,10 @@ Halte dich bei deiner Antwort EXAKT an folgende Formatierung, damit es in der Ap
 (Gib eine kurze narrative Vorschau darauf, was rohe Gewalt (A), Hacking (B) oder Schleichen (C) in dieser Situation bedeuten würde. Keine Listen, nur kurzer Fließtext.)
 """
 
-# --- 4. API SETUP ---
+# --- 4. API SETUP (NEUES SDK) ---
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
-    # Verwende 1.5 Flash für schnelle und gute Textabenteuer-Ergebnisse
-    model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        system_instruction=SYSTEM_PROMPT
-    )
+    client = genai.Client(api_key=api_key)
 except Exception as e:
     st.error("⚠️ SYSTEM-FEHLER: GEMINI_API_KEY nicht in st.secrets gefunden!")
     st.stop()
@@ -167,8 +163,13 @@ if "state" not in st.session_state:
         "game_over": False,
         "story_log": []
     }
-    # Initialisiere Gemini Chat
-    st.session_state.chat = model.start_chat(history=[])
+    # Initialisiere Gemini Chat mit dem NEUEN SDK
+    st.session_state.chat = client.chats.create(
+        model='gemini-1.5-flash',
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT
+        )
+    )
 
 s = st.session_state.state
 
@@ -270,7 +271,7 @@ if len(s["story_log"]) == 0:
     boot_text = f"**[SYSTEM BOOT]**\n\nDas Mutator-Phänomen **{s['mutator']}** bricht über die Sektor 4 Kuppel herein! Eine Millisekunde vor deinem Tod reißt dich L-CAT in den Cyberspace.\n\n> 🐈‍⬛ L-CAT.LOG //\n> Wach auf, Sack Fleisch. Du funktionierst jetzt als mein Vektor. Wähle deinen Habitus, oder die Sentinel-Routinen löschen dich."
     st.markdown(boot_text)
 else:
-    # Zeige nur den aktuellsten Log-Eintrag für eine cleane UI (oder iteriere für kompletten Verlauf)
+    # Zeige nur den aktuellsten Log-Eintrag für eine cleane UI
     st.markdown(s["story_log"][-1])
 st.markdown("</div>", unsafe_allow_html=True)
 
